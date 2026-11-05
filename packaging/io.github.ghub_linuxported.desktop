@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=G HUB Linux Ported
+GenericName=Gaming Mouse Settings
+Comment=Configure the Logitech G PRO X2 SUPERSTRIKE: HITS switches, DPI, polling rate, buttons, bhop
+Exec=ghub-linuxported
+Icon=io.github.ghub_linuxported
+Terminal=false
+Categories=Settings;HardwareSettings;
+Keywords=logitech;mouse;superstrike;dpi;haptics;hits;ghub;
+StartupNotify=true

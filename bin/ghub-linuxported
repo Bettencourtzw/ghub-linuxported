@@ -1,0 +1,5 @@
+#!/bin/sh
+# Launcher: runs the in-repo package (no pip install needed).
+HERE=$(dirname "$(readlink -f "$0")")
+export PYTHONPATH="$HERE/..${PYTHONPATH:+:$PYTHONPATH}"
+exec python3 -m ghub_linuxported  "$@"

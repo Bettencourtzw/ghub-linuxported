@@ -370,6 +370,22 @@ class DeviceService:
             self._reload(sector)
         self.refresh()
 
+    def restore_backup(self, sector: int, raw: bytes):
+        if len(raw) != self.mouse.onboard.sector_size:
+            raise SaveError("backup does not match this mouse's sector size")
+        if sector == 0x0000:
+            data = with_crc(raw)
+            parse_directory(data)
+            self._write_verified(0x0000, data, "restore directory backup")
+            self.refresh()
+        else:
+            self.write_raw_profile(sector, raw, "restore backup")
+
+    def rename_profile(self, sector: int, name: str):
+        prof = copy.deepcopy(self.snapshot.profiles[sector])
+        prof.name = name
+        self.save_profile(prof, activate=False)
+
     def factory_reset_profile(self, sector: int):
         rom = self.mouse.read_sector(ROM_FACTORY_PROFILE)
         self.write_raw_profile(sector, rom, "factory reset")
