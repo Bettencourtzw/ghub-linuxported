@@ -343,8 +343,9 @@ class Mouse:
     # ---------- bunny-hop scroll filter (0x80E0) ----------
     # fn1 = get, fn2 = SET. Never call fn2 as a getter: it clears the window.
     def bhop_get(self) -> int:
-        """Window in milliseconds; 0 = off."""
-        return self.call(F_BUNNY_HOP, 1)[0] * 10
+        """Window in milliseconds; 0 = off. 0xFF = never configured (off)."""
+        raw = self.call(F_BUNNY_HOP, 1)[0]
+        return 0 if raw == 0xFF else raw * 10
 
     def bhop_set(self, ms: int):
         if ms and not 100 <= ms <= 1000:

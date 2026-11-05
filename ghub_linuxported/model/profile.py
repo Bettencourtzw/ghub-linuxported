@@ -148,7 +148,9 @@ class Profile:
         # Only touch angle snapping if it was a recognised boolean before.
         if b[OFF_ANGLE_SNAP] in (0x00, 0x01):
             b[OFF_ANGLE_SNAP] = 0x01 if self.angle_snapping else 0x00
-        b[OFF_BHOP] = self.bhop_ms // 10
+        # 0xFF = "never configured" (off) on unconfigured units: keep it while bhop stays off.
+        if not (self.bhop_ms == 0 and b[OFF_BHOP] == 0xFF):
+            b[OFF_BHOP] = self.bhop_ms // 10
         for i, h in enumerate(self.hits):
             b[OFF_HITS + 3 * i:OFF_HITS + 3 * i + 3] = h.to_wire()
         b[OFF_POWER_SAVE:OFF_POWER_SAVE + 2] = self.power_save_s.to_bytes(2, "little")
