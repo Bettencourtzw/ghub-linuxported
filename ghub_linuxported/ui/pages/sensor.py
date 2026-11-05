@@ -4,7 +4,7 @@ from gi.repository import Adw, Gtk
 
 from .base import Page
 from ..widgets import toggle_group, set_toggle_silent
-from ...hidpp.mouse import RATE_HZ, SURFACE_MODES, snap_dpi
+from ...hidpp.mouse import RATE_HZ, SURFACE_MODES, HOST_MODE, snap_dpi
 from ...model.profile import LOD_NAMES
 from ... import storage
 
@@ -56,7 +56,7 @@ class SensorPage(Page):
             self.stages_group.add(r.row)
 
         rate = self.group("Report rate", "How often the mouse reports to the PC. Higher is smoother and "
-                                         "uses more battery. Applies instantly on the active link.")
+                                         "uses more battery. Takes effect when you save to the mouse.")
         self.rate_wireless = toggle_group([f"{hz:g}" if hz < 1000 else f"{hz // 1000}K" for hz in RATE_HZ],
                                           self._on_rate_wireless)
         rw = Adw.ActionRow(title="LIGHTSPEED wireless (Hz)")
@@ -143,7 +143,7 @@ class SensorPage(Page):
             return
         hz = RATE_HZ[i]
         e.rate_wireless_hz = hz
-        if not self.win.snapshot.wired:
+        if not self.win.snapshot.wired and self.win.snapshot.mode == HOST_MODE:
             self.win.live(lambda s: s.apply_rate(hz))
         self.win.changed()
 
@@ -153,7 +153,7 @@ class SensorPage(Page):
             return
         hz = RATE_HZ[i]
         e.rate_wired_hz = hz
-        if self.win.snapshot.wired:
+        if self.win.snapshot.wired and self.win.snapshot.mode == HOST_MODE:
             self.win.live(lambda s: s.apply_rate(hz))
         self.win.changed()
 

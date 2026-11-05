@@ -18,7 +18,7 @@ from ghub_linuxported.hidpp.mouse import Identity, Battery, OnboardInfo, HitsBut
 from ghub_linuxported.model.profile import Profile, parse_directory, DirectoryEntry  # noqa: E402
 from ghub_linuxported.ui.app import App  # noqa: E402
 
-SIZE = (1400, 900)
+SIZE = (1440, 920)
 FIX = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "xatuke_profile1.bin"
 
 
@@ -62,49 +62,114 @@ def render(win, path):
     w, h = win.get_width(), win.get_height()
     snap = Gtk.Snapshot()
     paintable.snapshot(snap, w, h)
-    node = snap.to_node()
-    tex = win.get_renderer().render_texture(node, None)
+    tex = win.get_renderer().render_texture(snap.to_node(), None)
     tex.save_to_png(str(path))
+
+
+def fake_devices():
+    from ghub_linuxported.devices import FoundDevice
+    m = FoundDevice("/dev/hidraw-fake-m", 0x40BD, "Logitech X2 SUPERSTRIKE", 1, "PRO X2 SUPERSTRIKE", "mouse",
+                    "superstrike", True, Battery(72, 0, False), "LIGHTSPEED wireless")
+    k = FoundDevice("/dev/hidraw-fake-k", 0x40B4, "Logitech G515 LS TKL", 1, "G515 LS TKL", "keyboard",
+                    "keyboard", True, Battery(64, 1, True), "LIGHTSPEED wireless")
+    return [m, k]
+
+
+def fake_keyboard_service(found, state):
+    from ghub_linuxported.keyboard_service import KeyboardService
+    from ghub_linuxported.hidpp.lighting import Lighting, LightingInfo, EffectSlot
+
+    class FakeKb(KeyboardService):
+        def start(self):
+            self.status = "connected"
+            self.identity = Identity(name="G515 LS TKL", unit_id="00-00-00-00", model_id="B38940B4C355",
+                                     firmware=["Main: MPK 25.01.B0011"], protocol="4.2",
+                                     connection="LIGHTSPEED wireless")
+            self.battery = Battery(64, 1, True)
+            self.lighting = Lighting(None)
+            self.lighting.info = LightingInfo(1, [EffectSlot(0, i, e, 0, 0) for i, e in
+                                                  enumerate((0, 1, 0x0A, 0x15, 0x16, 0x17))],
+                                              list(range(1, 96)), 100, 5, 60)
+
+        def submit(self, fn, on_done=None, on_error=None):
+            if on_done:
+                GLib.idle_add(lambda: on_done(None) and False)
+
+        def stop(self, wait=0.0):
+            pass
+    svc = FakeKb(lambda fn, *a: GLib.idle_add(lambda: fn(*a) and False), found)
+    svc.state.update(state)
+    svc.start()
+    return svc
+
+
+def hypr_float(pid, w, h):
+    """Float + size the preview window (Hyprland >= 0.55 Lua dispatchers, then legacy syntax)."""
+    import os, shutil, subprocess
+    if not (shutil.which("hyprctl") and os.environ.get("HYPRLAND_INSTANCE_SIGNATURE")):
+        return
+    for expr in (f"hl.dsp.window.float({{ action = 'enable', window = 'pid:{pid}' }})",
+                 f"hl.dsp.window.resize({{ x = {w}, y = {h}, window = 'pid:{pid}' }})"):
+        subprocess.run(["hyprctl", "dispatch", expr], capture_output=True)
+    subprocess.run(["hyprctl", "dispatch", "setfloating", f"pid:{pid}"], capture_output=True)
+    subprocess.run(["hyprctl", "dispatch", "resizewindowpixel", f"exact {w} {h},pid:{pid}"], capture_output=True)
 
 
 def main():
     out = Path(sys.argv[1])
     out.mkdir(parents=True, exist_ok=True)
-    dark = "--dark" in sys.argv
-    app = App()
-    import ghub_linuxported.ui.app as appmod
-    appmod.DeviceService = FakeService
-    keys = []
+    import ghub_linuxported.ui.home as home
+    import ghub_linuxported.ui.mouse_view as mv
+    import ghub_linuxported.tray.main as traymod
+    from ghub_linuxported.model.keyboard_layout import TKL_ANSI, WASD, ARROWS
+    devs = fake_devices()
+    home.scan = lambda previous=None: (devs, False)
+    mv.DeviceService = FakeService
 
-    def shoot(i=0):
+    class NoTray:
+        def __init__(self, *a, **k): pass
+        def start(self): pass
+        def stop(self): pass
+        def set_devices(self, d): pass
+        def keyboard_battery(self, d): pass
+    traymod.Tray = NoTray
+    App._restore_keyboards = lambda self: None
+    gamer = {str(k.usage): [0, 168, 232] for k in TKL_ANSI}
+    gamer.update({str(u): [255, 0, 129] for u in WASD | ARROWS})
+    kb_state = {"mode": "perkey", "keys": gamer}
+    App.keyboard_service = lambda self, found: fake_keyboard_service(found, kb_state)
+    App.keyboard_view_closed = lambda self, found: None
+    app = App()
+    W, H = SIZE
+
+    def steps():
         win = app.win
-        if i == 0:
-            keys.extend(p.key for p in win.pages)
-        if i >= len(keys):
-            app.quit()
+        home_dev = {d.kind: d for d in devs}
+        seq = [("home", None), ("keyboard", lambda: win.open_device(home_dev["keyboard"])),
+               ("mouse", lambda: (win.nav.pop(), win.open_device(home_dev["mouse"]))),
+               ("hits", lambda: win.nav.get_visible_page().view.goto("hits")),
+               ("buttons", lambda: win.nav.get_visible_page().view.goto("buttons"))]
+
+        def run(i=0):
+            if i >= len(seq):
+                app.really_quit()
+                return False
+            name, action = seq[i]
+            if action:
+                action()
+            GLib.timeout_add(1600, lambda: (render(win, out / f"{name}.png"), run(i + 1)) and False)
             return False
-        win.goto(keys[i])
-        GLib.timeout_add(700, lambda: (render(win, out / f"{i:02d}_{keys[i]}.png"), shoot(i + 1)) and False)
+        run()
         return False
 
     def setup():
-        if dark:
-            Adw.StyleManager.get_default().set_color_scheme(Adw.ColorScheme.FORCE_DARK)
-        app.win.set_default_size(*SIZE)
-        # Under Hyprland the window is tiled; float + size just this window for screenshots.
-        import os, shutil, subprocess
-        if shutil.which("hyprctl") and os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
-            def hypr():
-                pid = os.getpid()
-                subprocess.run(["hyprctl", "dispatch", "setfloating", f"pid:{pid}"], capture_output=True)
-                subprocess.run(["hyprctl", "dispatch", "resizewindowpixel", f"exact {SIZE[0]} {SIZE[1]},pid:{pid}"],
-                               capture_output=True)
-                return False
-            GLib.timeout_add(600, hypr)
-        GLib.timeout_add(2000, shoot)
+        win = app.win
+        win.set_default_size(W, H)
+        hypr_float(__import__("os").getpid(), W, H)
+        GLib.timeout_add(2200, steps)
         return False
-    app.connect("activate", lambda *_: GLib.idle_add(setup))
-    app.run([])
+    GLib.timeout_add(1200, setup)
+    app.run([sys.argv[0]])
 
 
 if __name__ == "__main__":

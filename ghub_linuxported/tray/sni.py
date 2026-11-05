@@ -1,12 +1,14 @@
-"""Minimal StatusNotifierItem + com.canonical.dbusmenu over Gio (no extra libraries).
-
-Works with Waybar's tray, KDE, and any StatusNotifierWatcher host.
+"""StatusNotifierItem over Gio; the context menu is served by libdbusmenu-glib
+(the same library tray hosts such as Waybar use to parse it).
 """
 from __future__ import annotations
 
 import os
 
-from gi.repository import Gio, GLib
+import gi
+
+gi.require_version("Dbusmenu", "0.4")
+from gi.repository import Dbusmenu, Gio, GLib  # noqa: E402
 
 SNI_XML = """
 <node>
@@ -29,40 +31,6 @@ SNI_XML = """
  </interface>
 </node>"""
 
-MENU_XML = """
-<node>
- <interface name="com.canonical.dbusmenu">
-  <property name="Version" type="u" access="read"/>
-  <property name="TextDirection" type="s" access="read"/>
-  <property name="Status" type="s" access="read"/>
-  <property name="IconThemePath" type="as" access="read"/>
-  <method name="GetLayout">
-   <arg type="i" direction="in"/><arg type="i" direction="in"/><arg type="as" direction="in"/>
-   <arg type="u" direction="out"/><arg type="(ia{sv}av)" direction="out"/>
-  </method>
-  <method name="GetGroupProperties">
-   <arg type="ai" direction="in"/><arg type="as" direction="in"/><arg type="a(ia{sv})" direction="out"/>
-  </method>
-  <method name="GetProperty">
-   <arg type="i" direction="in"/><arg type="s" direction="in"/><arg type="v" direction="out"/>
-  </method>
-  <method name="Event">
-   <arg type="i" direction="in"/><arg type="s" direction="in"/><arg type="v" direction="in"/>
-   <arg type="u" direction="in"/>
-  </method>
-  <method name="EventGroup">
-   <arg type="a(isvu)" direction="in"/><arg type="ai" direction="out"/>
-  </method>
-  <method name="AboutToShow"><arg type="i" direction="in"/><arg type="b" direction="out"/></method>
-  <method name="AboutToShowGroup">
-   <arg type="ai" direction="in"/><arg type="ai" direction="out"/><arg type="ai" direction="out"/>
-  </method>
-  <signal name="LayoutUpdated"><arg type="u"/><arg type="i"/></signal>
-  <signal name="ItemsPropertiesUpdated"><arg type="a(ia{sv})"/><arg type="a(ias)"/></signal>
- </interface>
-</node>"""
-
-
 class MenuItem:
     def __init__(self, label="", callback=None, enabled=True, separator=False, children=None,
                  radio=None, icon=None):
@@ -70,18 +38,28 @@ class MenuItem:
         self.separator, self.children, self.radio, self.icon = separator, children or [], radio, icon
         self.id = 0
 
-    def props(self) -> dict:
+    def build(self) -> "Dbusmenu.Menuitem":
+        mi = Dbusmenu.Menuitem.new()
         if self.separator:
-            return {"type": GLib.Variant("s", "separator")}
-        p = {"label": GLib.Variant("s", self.label), "enabled": GLib.Variant("b", self.enabled)}
+            mi.property_set(Dbusmenu.MENUITEM_PROP_TYPE, Dbusmenu.CLIENT_TYPES_SEPARATOR)
+            return mi
+        mi.property_set(Dbusmenu.MENUITEM_PROP_LABEL, self.label)
+        mi.property_set_bool(Dbusmenu.MENUITEM_PROP_ENABLED, self.enabled)
         if self.icon:
-            p["icon-name"] = GLib.Variant("s", self.icon)
-        if self.children:
-            p["children-display"] = GLib.Variant("s", "submenu")
+            mi.property_set(Dbusmenu.MENUITEM_PROP_ICON_NAME, self.icon)
         if self.radio is not None:
-            p["toggle-type"] = GLib.Variant("s", "radio")
-            p["toggle-state"] = GLib.Variant("i", 1 if self.radio else 0)
-        return p
+            mi.property_set(Dbusmenu.MENUITEM_PROP_TOGGLE_TYPE, Dbusmenu.MENUITEM_TOGGLE_RADIO)
+            mi.property_set_int(Dbusmenu.MENUITEM_PROP_TOGGLE_STATE,
+                                Dbusmenu.MENUITEM_TOGGLE_STATE_CHECKED if self.radio
+                                else Dbusmenu.MENUITEM_TOGGLE_STATE_UNCHECKED)
+        if self.children:
+            mi.property_set(Dbusmenu.MENUITEM_PROP_CHILD_DISPLAY, Dbusmenu.MENUITEM_CHILD_DISPLAY_SUBMENU)
+            for c in self.children:
+                mi.child_append(c.build())
+        if self.callback:
+            cb = self.callback
+            mi.connect("item-activated", lambda *_: GLib.idle_add(lambda: cb() and False))
+        return mi
 
 
 class StatusNotifierItem:
@@ -91,15 +69,11 @@ class StatusNotifierItem:
         self.tooltip = (title, "")
         self.status = "Active"
         self.on_activate, self.on_scroll, self.on_menu_open = on_activate, on_scroll, on_menu_open
-        self.root = MenuItem("root")
-        self.items: dict[int, MenuItem] = {}
-        self.revision = 1
+        self.menu_server = Dbusmenu.Server.new("/MenuBar")
         self.bus = Gio.bus_get_sync(Gio.BusType.SESSION)
         self.name = f"org.kde.StatusNotifierItem-{os.getpid()}-1"
         sni = Gio.DBusNodeInfo.new_for_xml(SNI_XML).interfaces[0]
-        menu = Gio.DBusNodeInfo.new_for_xml(MENU_XML).interfaces[0]
         self.bus.register_object("/StatusNotifierItem", sni, self._sni_call, self._sni_get, None)
-        self.bus.register_object("/MenuBar", menu, self._menu_call, self._menu_get, None)
         Gio.bus_own_name_on_connection(self.bus, self.name, Gio.BusNameOwnerFlags.NONE, None, None)
         self._watch = Gio.bus_watch_name_on_connection(self.bus, "org.kde.StatusNotifierWatcher",
                                                        Gio.BusNameWatcherFlags.NONE, self._register, None)
@@ -129,19 +103,11 @@ class StatusNotifierItem:
                        GLib.Variant("(s)", (status,)))
 
     def set_menu(self, items: list[MenuItem]):
-        self.root = MenuItem("root", children=items)
-        self.items = {0: self.root}
-        counter = [1]
-
-        def number(item):
-            for c in item.children:
-                c.id = counter[0]
-                counter[0] += 1
-                self.items[c.id] = c
-                number(c)
-        number(self.root)
-        self.revision += 1
-        self._emit("/MenuBar", "com.canonical.dbusmenu", "LayoutUpdated", GLib.Variant("(ui)", (self.revision, 0)))
+        root = Dbusmenu.Menuitem.new()
+        for it in items:
+            root.child_append(it.build())
+        root.connect("about-to-show", lambda *_: self.on_menu_open and self.on_menu_open() or False)
+        self.menu_server.set_root(root)
 
     # ---------------- D-Bus plumbing
     def _emit(self, path, iface, signal, params=None):
@@ -167,52 +133,6 @@ class StatusNotifierItem:
             if orientation == "vertical":
                 self.on_scroll(1 if delta < 0 else -1)
         invocation.return_value(None)
-
-    def _menu_get(self, _conn, _sender, _path, _iface, prop):
-        return {"Version": GLib.Variant("u", 3), "TextDirection": GLib.Variant("s", "ltr"),
-                "Status": GLib.Variant("s", "normal"), "IconThemePath": GLib.Variant("as", [])}.get(prop)
-
-    def _layout(self, item: MenuItem, depth: int):
-        children = []
-        if depth != 0:
-            children = [GLib.Variant("v", self._layout(c, depth - 1)) for c in item.children]
-        props = item.props() if item is not self.root else {"children-display": GLib.Variant("s", "submenu")}
-        return GLib.Variant("(ia{sv}av)", (item.id, props, children))
-
-    def _menu_call(self, _conn, _sender, _path, _iface, method, params, invocation):
-        args = params.unpack()
-        if method == "GetLayout":
-            parent, depth, _names = args
-            item = self.items.get(parent, self.root)
-            invocation.return_value(GLib.Variant.new_tuple(GLib.Variant("u", self.revision),
-                                                           self._layout(item, depth)))
-        elif method == "GetGroupProperties":
-            ids, _names = args
-            out = [(i, self.items[i].props()) for i in (ids or self.items.keys()) if i in self.items]
-            invocation.return_value(GLib.Variant("(a(ia{sv}))", (out,)))
-        elif method == "GetProperty":
-            i, name = args
-            v = self.items[i].props().get(name, GLib.Variant("s", "")) if i in self.items else GLib.Variant("s", "")
-            invocation.return_value(GLib.Variant("(v)", (v,)))
-        elif method == "Event":
-            i, event, _data, _ts = args
-            if event == "clicked" and i in self.items and self.items[i].callback:
-                GLib.idle_add(lambda: self.items[i].callback() and False)
-            invocation.return_value(None)
-        elif method == "EventGroup":
-            for i, event, _data, _ts in args[0]:
-                if event == "clicked" and i in self.items and self.items[i].callback:
-                    cb = self.items[i].callback
-                    GLib.idle_add(lambda cb=cb: cb() and False)
-            invocation.return_value(GLib.Variant("(ai)", ([],)))
-        elif method == "AboutToShow":
-            if args[0] == 0 and self.on_menu_open:
-                self.on_menu_open()
-            invocation.return_value(GLib.Variant("(b)", (False,)))
-        elif method == "AboutToShowGroup":
-            invocation.return_value(GLib.Variant("(aiai)", ([], [])))
-        else:
-            invocation.return_value(None)
 
 
 def notify(summary: str, body: str = "", icon: str = "input-mouse-symbolic", urgency: int = 1,

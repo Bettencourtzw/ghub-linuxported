@@ -168,16 +168,21 @@ class Mouse:
 
     # ---------- discovery ----------
     @classmethod
-    def open(cls, swid: int = SWID_GUI) -> "Mouse":
-        """Find the Superstrike. Raises PermissionError if nodes exist but are not
-        accessible, FileNotFoundError if no candidate answers."""
+    def open(cls, swid: int = SWID_GUI, node: str | None = None, dev_index: int | None = None) -> "Mouse":
+        """Find the Superstrike (or open the given hidraw node). Raises PermissionError if
+        nodes exist but are not accessible, FileNotFoundError if no candidate answers."""
         nodes = list_logitech_nodes()
-        ordered = ([n for n in nodes if n.product == PID_WIRED] +
-                   [n for n in nodes if n.product == PID_WIRELESS] +
-                   [n for n in nodes if n.product == PID_RECEIVER])
+        if node:
+            ordered = [n for n in nodes if n.path == node]
+        else:
+            ordered = ([n for n in nodes if n.product == PID_WIRED] +
+                       [n for n in nodes if n.product == PID_WIRELESS] +
+                       [n for n in nodes if n.product == PID_RECEIVER])
         perm_denied = False
         for node in ordered:
             indexes = [0xFF, 0x01] if node.product != PID_RECEIVER else [0x01, 0x02, 0x03, 0x04, 0x05, 0x06]
+            if dev_index is not None:
+                indexes = [dev_index]
             for idx in indexes:
                 try:
                     t = HidrawTransport(node.path, idx, swid)
@@ -191,7 +196,8 @@ class Mouse:
                 except (HidppTimeout, HidppError, DeviceGone):
                     t.close()
                     continue
-                m = cls(t, "Wired USB" if node.product == PID_WIRED else "LIGHTSPEED wireless")
+                m = cls(t, "Wired USB" if node.product == PID_WIRED or node.name.endswith("Wired") else
+                        "LIGHTSPEED wireless")
                 m.protocol = proto
                 m.node = node
                 try:

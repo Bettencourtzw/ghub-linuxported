@@ -161,22 +161,43 @@ class DiagnosticsPage(Page):
         self._feature_rows = []
         col.append(self.features_group)
 
-        console = Adw.PreferencesGroup(
+        console = Adw.PreferencesGroup(title="Advanced")
+        self.console_row = Adw.ExpanderRow(
             title="Raw HID++ console",
-            description="For protocol research. Requests go straight to the mouse; a wrong command can change "
-                        "settings. Avoid onboard-profile write functions (0x8100 fn 6–8).")
-        self.c_index = Adw.EntryRow(title="Feature index (hex)")
-        self.c_fn = Adw.EntryRow(title="Function (0–15)")
-        self.c_params = Adw.EntryRow(title="Parameters (hex bytes)", show_apply_button=True)
-        self.c_params.connect("apply", self._send)
-        for r in (self.c_index, self.c_fn, self.c_params):
-            console.add(r)
-        self.log = Gtk.TextView(editable=False, monospace=True, wrap_mode=Gtk.WrapMode.CHAR,
+            subtitle="Send a single request to the device. For protocol research only.")
+        self.console_row.add_prefix(Gtk.Image(icon_name="utilities-terminal-symbolic"))
+        console.add(self.console_row)
+        warn = Adw.ActionRow(title="Careful", subtitle="Setter functions change the device immediately. "
+                                                       "Never use onboard-profile write functions (0x8100 fn 6–8).")
+        warn.add_prefix(Gtk.Image(icon_name="dialog-warning-symbolic"))
+        self.console_row.add_row(warn)
+        self.c_feature = Adw.ComboRow(title="Feature")
+        self.console_row.add_row(self.c_feature)
+        self.c_fn = Adw.SpinRow.new_with_range(0, 15, 1)
+        self.c_fn.set_title("Function")
+        self.console_row.add_row(self.c_fn)
+        self.c_params = Adw.EntryRow(title="Parameters (hex, e.g. 00 01)")
+        self.c_params.connect("entry-activated", self._send)
+        self.console_row.add_row(self.c_params)
+        send = Adw.ButtonRow(title="Send request", start_icon_name="mail-send-symbolic")
+        send.connect("activated", self._send)
+        self.console_row.add_row(send)
+
+        self.log_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, visible=False, margin_top=12)
+        head = Gtk.Box()
+        head.append(Gtk.Label(label="Responses", xalign=0, hexpand=True, css_classes=["heading"]))
+        clear = Gtk.Button(label="Clear", css_classes=["flat"])
+        clear.connect("clicked", lambda *_: (self.log.get_buffer().set_text(""), self.log_box.set_visible(False)))
+        head.append(clear)
+        self.log_box.append(head)
+        self.log = Gtk.TextView(editable=False, monospace=True, wrap_mode=Gtk.WrapMode.CHAR, cursor_visible=False,
                                 css_classes=["card", "console"], top_margin=10, bottom_margin=10,
                                 left_margin=12, right_margin=12)
-        self.log.set_size_request(-1, 160)
-        console.add(self.log)
+        self.log.set_size_request(-1, 120)
+        self.log_box.append(self.log)
+        console.add(self.log_box)
         col.append(console)
+        self._feature_choices = []
         return scroller
 
     # ---- rate
@@ -220,21 +241,25 @@ class DiagnosticsPage(Page):
 
     # ---- console
     def _send(self, *_):
-        try:
-            idx = int(self.c_index.get_text() or "0", 16)
-            fn = int(self.c_fn.get_text() or "0", 0)
-            params = bytes.fromhex(self.c_params.get_text().replace(",", " "))
-            if not (0 <= idx <= 0xFF and 0 <= fn <= 15 and len(params) <= 16):
-                raise ValueError("out of range")
-        except ValueError as exc:
-            self.win.toast(f"Bad request: {exc}")
+        i = self.c_feature.get_selected()
+        if i >= len(self._feature_choices):
+            self.win.toast("Pick a feature first")
             return
-        name = next((FEATURE_NAMES.get(fid, "") for i, fid, *_ in self.win.snapshot.features if i == idx), "")
-        self._log(f"> idx 0x{idx:02x} ({name or '?'}) fn {fn} [{params.hex(' ')}]")
-        self.win.run(lambda s: s.raw_call(idx, fn, params), lambda r: self._log(f"< {r.hex(' ')}"),
-                     error=lambda e: self._log(f"! {e}"))
+        idx, fid = self._feature_choices[i]
+        fn = int(self.c_fn.get_value())
+        try:
+            params = bytes.fromhex(self.c_params.get_text().replace(",", " ").replace("0x", ""))
+            if len(params) > 16:
+                raise ValueError("at most 16 bytes")
+        except ValueError as exc:
+            self.win.toast(f"Parameters: {exc}")
+            return
+        self._log(f"→ 0x{fid:04X} {FEATURE_NAMES.get(fid, '')} · fn {fn} · [{params.hex(' ') or '—'}]")
+        self.win.run(lambda s: s.raw_call(idx, fn, params), lambda r: self._log(f"← {r.hex(' ')}"),
+                     error=lambda e: self._log(f"✕ {e}"))
 
     def _log(self, line):
+        self.log_box.set_visible(True)
         buf = self.log.get_buffer()
         buf.insert(buf.get_end_iter(), line + "\n")
         self.log.scroll_to_iter(buf.get_end_iter(), 0, False, 0, 0)
@@ -248,4 +273,7 @@ class DiagnosticsPage(Page):
                               subtitle=f"index 0x{idx:02X} · version {ver}" + (" · hidden" if flags & 0x40 else ""))
             self.features_row.add_row(r)
             self._feature_rows.append(r)
+        self._feature_choices = [(idx, fid) for idx, fid, *_ in snap.features]
+        self.c_feature.set_model(Gtk.StringList.new(
+            [f"0x{fid:04X}  {FEATURE_NAMES.get(fid, 'Unknown')}" for _i, fid in self._feature_choices]))
         self.features_row.set_subtitle(f"{len(snap.features)} features")

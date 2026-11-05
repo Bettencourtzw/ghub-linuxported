@@ -143,6 +143,8 @@ class TransportTests(unittest.TestCase):
         self.assertEqual(kind, "ok")
         self.assertEqual(params[:4].hex(), "00080c0c")
         self.assertEqual(match_reply(bytes.fromhex("11010c2b00") + bytes(15), 0x0C, 2, 0xA), (None, None))
+        # late reply to fn1 (same feature, same swid) must not satisfy an fn0 request
+        self.assertEqual(match_reply(bytes.fromhex("1101001a04025a") + bytes(13), 0x00, 0, 0xA), (None, None))
         kind, err = match_reply(bytes.fromhex("1101ff0c1a02") + bytes(14), 0x0C, 1, 0xA)
         self.assertEqual(kind, "error")
         self.assertIsInstance(err, HidppError)

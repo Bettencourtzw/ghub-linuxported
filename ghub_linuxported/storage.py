@@ -27,7 +27,7 @@ DEFAULTS = {
     # Live-only settings the tray helper re-applies when the mouse reconnects.
     "reapply_on_connect": True,
     "live": {},          # e.g. {"surface": 0, "hits": [...], "bhop_ms": 0, "rate_hz": 1000, "dpi": [x, y, lod]}
-    "color_scheme": "system",  # system | light | dark
+    "theme": "ghub",  # ghub | system
 }
 
 

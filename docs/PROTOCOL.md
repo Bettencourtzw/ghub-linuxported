@@ -57,3 +57,24 @@ Example INS (CS2) `MDAwNDA1MDMwNTEwMDQwMw==` → `00 04 05 03 05 10 04 03`.
 
 Field map verified against a factory dump (tests/fixtures) and cross-checked with
 the sources in the README. Run `ghub-linuxported-cli dump` on your unit to compare.
+
+# G515 LS TKL lighting (as implemented)
+
+Device: wireless PID `0x40B4` via receiver `046d:c547`, HID++ 4.2. Verified read-only on a
+live unit: one Primary cluster, effect slots 0 Off, 1 Static, 2 Breathe (`0x0A`),
+3 Cycle (`0x15`), 4 Wave (`0x16`), 5 Ripple (`0x17`); 95 per-key zones; brightness
+0–100 in 5 steps. Live writes verified (claim → static → per-key frame → wave → release).
+
+| Feature | Use |
+|---|---|
+| `0x8101` fn6 | `05` host mode (before claiming) · `03` back to onboard (after releasing) |
+| `0x8071` fn0 | `FF FF 00` cluster count · `c FF 00` cluster info · `c s 00` effect slot → `[c][s][id BE16][caps BE16][period BE16]` |
+| `0x8071` fn1 | `[cluster][slot][10 params][01]`. Static `R G B 02` · Breathe `R G B pH pL 00 intensity` · Cycle `00 FF 00 00 00 00 pH pL intensity` · Wave same + direction · Ripple `R G B FF 00 00 pH pL` |
+| `0x8071` fn5 | `01 03 04` claim software control · `01 00 00` release · get `00` → byte 1 = mode (0 = firmware) |
+| `0x8081` fn1/fn6/fn7 | `[zone R G B]×4` · `R G B` + up to 13 zones · FrameEnd (16 × `00`, retry on BUSY) |
+| `0x8040` fn0/fn1/fn2 | info `[max BE16][steps]` · get · set BE16 |
+
+Per-key zone = HID usage − 3 (usages 0x04–0x66); modifiers 0xE0–0xE7 → 104–111. Per-key
+colors are only visible while the cluster runs Static (a black Static "primer" is sent once
+per claim). Software lighting is volatile: it is lost on reconnect or power cycle, so the
+app re-applies it and checks the claim every 8 s.

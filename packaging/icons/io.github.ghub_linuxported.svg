@@ -1,15 +1,56 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#2b2f3a"/><stop offset="1" stop-color="#14161c"/>
+    <!-- tile -->
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1b1f2a"/>
+      <stop offset="1" stop-color="#0a0b10"/>
     </linearGradient>
-    <linearGradient id="shell" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#f4f5f7"/><stop offset="1" stop-color="#c9ccd3"/>
+    <radialGradient id="glow" cx="0.5" cy="0.42" r="0.6">
+      <stop offset="0" stop-color="#1fb6ff" stop-opacity="0.32"/>
+      <stop offset="0.55" stop-color="#6d5dfc" stop-opacity="0.10"/>
+      <stop offset="1" stop-color="#6d5dfc" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.18"/>
+      <stop offset="0.5" stop-color="#ffffff" stop-opacity="0.03"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.08"/>
     </linearGradient>
+    <!-- monogram -->
+    <linearGradient id="ink" x1="34" y1="70" x2="222" y2="186" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3ee0ff"/>
+      <stop offset="0.5" stop-color="#2f8cff"/>
+      <stop offset="1" stop-color="#8a5cff"/>
+    </linearGradient>
+    <filter id="bloom" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="7"/>
+    </filter>
+    <clipPath id="sq"><rect x="12" y="12" width="232" height="232" rx="58"/></clipPath>
   </defs>
-  <rect x="8" y="8" width="112" height="112" rx="26" fill="url(#bg)"/>
-  <path d="M64 22c15 0 23 7 24 20 2 17 1 32-3 45-3 10-11 15-21 15s-18-5-21-15c-4-13-5-28-3-45 1-13 9-20 24-20z" fill="url(#shell)"/>
-  <path d="M64 22v26M41 48c8 2 15 3 23 3s15-1 23-3" stroke="#14161c" stroke-width="2.5" fill="none" stroke-linecap="round"/>
-  <rect x="60" y="29" width="8" height="14" rx="4" fill="#14161c"/>
-  <path d="M30 40c-4 4-4 12 0 16M22 34c-8 8-8 20 0 28M98 40c4 4 4 12 0 16M106 34c8 8 8 20 0 28" stroke="#3d8bfd" stroke-width="4" fill="none" stroke-linecap="round"/>
+
+  <!-- squircle tile -->
+  <rect x="12" y="12" width="232" height="232" rx="58" fill="url(#tile)"/>
+  <g clip-path="url(#sq)">
+    <rect x="12" y="12" width="232" height="232" fill="url(#glow)"/>
+    <!-- fine scan lines, very subtle -->
+    <g stroke="#ffffff" stroke-opacity="0.025" stroke-width="1">
+      <path d="M12 60H244M12 92H244M12 124H244M12 156H244M12 188H244M12 220H244"/>
+    </g>
+  </g>
+  <rect x="13" y="13" width="230" height="230" rx="57" fill="none" stroke="url(#rim)" stroke-width="2"/>
+
+  <!-- GLP monogram: geometric monoline letters -->
+  <defs><g id="mono" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="15">
+    <!-- G -->
+    <path d="M100 92 A40 40 0 1 0 104 150 L104 128 L82 128"/>
+    <!-- L -->
+    <path d="M128 88 V168 H156"/>
+    <!-- P -->
+    <path d="M178 168 V88 H192 A20 20 0 0 1 192 128 H178"/>
+  </g></defs>
+  <use href="#mono" stroke="url(#ink)" filter="url(#bloom)" opacity="0.75" transform="translate(6 0)"/>
+  <use href="#mono" stroke="url(#ink)" transform="translate(6 0)"/>
+
+  <!-- accent: a small click/haptic pulse under the letters -->
+  <path d="M56 198 H104 L112 188 L122 208 L132 192 L138 198 H200" fill="none" stroke="url(#ink)"
+        stroke-width="4" stroke-linecap="round" stroke-linejoin="round" opacity="0.85"/>
 </svg>

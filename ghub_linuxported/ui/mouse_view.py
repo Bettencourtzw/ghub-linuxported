@@ -1,4 +1,4 @@
-"""Main window: sidebar navigation, connection states, editing profile + save bar."""
+"""Mouse device view (PRO X2 SUPERSTRIKE): sidebar pages, editing profile + save bar."""
 from __future__ import annotations
 
 import copy
@@ -20,11 +20,14 @@ UDEV_CMD = (f"sudo install -m644 '{UDEV_RULE}' /etc/udev/rules.d/ && "
             "sudo udevadm control --reload && sudo udevadm trigger --subsystem-match=hidraw")
 
 
-class MainWindow(Adw.ApplicationWindow):
-    def __init__(self, app, service: DeviceService):
-        super().__init__(application=app, title=storage.APP_NAME)
-        self.set_default_size(1180, 820)
-        self.set_size_request(380, 500)
+class MouseView(Adw.BreakpointBin):
+    def __init__(self, shell, found):
+        super().__init__()
+        self.set_size_request(360, 420)
+        self.shell = shell
+        self.found = found
+        service = DeviceService(dispatch=lambda fn, *a: GLib.idle_add(lambda: fn(*a) and False),
+                                node=found.path, dev_index=found.dev_index)
         self.service = service
         self.config = storage.load_config()
         self.snapshot: Snapshot = service.snapshot
@@ -33,11 +36,8 @@ class MainWindow(Adw.ApplicationWindow):
         self._busy = 0
 
         from .pages import build_pages
-        self.toasts = Adw.ToastOverlay()
-        self.set_content(self.toasts)
-
         self.outer = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE)
-        self.toasts.set_child(self.outer)
+        self.set_child(self.outer)
         self.outer.add_named(self._build_status_page(), "status")
 
         self.split = Adw.NavigationSplitView()
@@ -49,11 +49,11 @@ class MainWindow(Adw.ApplicationWindow):
         self.sidebar_list.connect("row-activated", self._on_nav)
         side_tb = Adw.ToolbarView()
         side_header = Adw.HeaderBar()
-        side_header.set_title_widget(Adw.WindowTitle(title="G HUB", subtitle="Linux ported"))
+        side_header.set_title_widget(Adw.WindowTitle(title=found.title, subtitle="Mouse"))
         menu = Gio.Menu()
-        menu.append("Re-read from mouse", "win.refresh")
-        menu.append("Open backups folder", "win.backups")
-        menu.append("About", "win.about")
+        menu.append("Re-read from mouse", "dev.refresh")
+        menu.append("Open backups folder", "dev.backups")
+        menu.append("About", "app.about")
         side_header.pack_end(Gtk.MenuButton(icon_name="open-menu-symbolic", menu_model=menu,
                                             tooltip_text="Menu"))
         side_tb.add_top_bar(side_header)
@@ -65,11 +65,11 @@ class MainWindow(Adw.ApplicationWindow):
                                       margin_bottom=12, margin_top=6)
         side_box.append(self.side_battery)
         side_tb.set_content(side_box)
-        self.split.set_sidebar(Adw.NavigationPage(title="G HUB", child=side_tb))
+        self.split.set_sidebar(Adw.NavigationPage(title=found.title, child=side_tb))
 
         # ---- content
         self.content_tb = Adw.ToolbarView()
-        header = Adw.HeaderBar()
+        header = Adw.HeaderBar(show_back_button=False)
         self.page_title = Adw.WindowTitle(title="Overview")
         header.set_title_widget(self.page_title)
         self.profile_dropdown = Gtk.DropDown(tooltip_text="Profile being edited")
@@ -111,6 +111,7 @@ class MainWindow(Adw.ApplicationWindow):
         self._bp_narrow = Adw.Breakpoint.new(Adw.BreakpointCondition.parse("max-width: 1150sp"))
         self._bp_collapsed = Adw.Breakpoint.new(Adw.BreakpointCondition.parse("max-width: 720sp"))
         self._bp_collapsed.add_setter(self.split, "collapsed", True)
+        self._bp_collapsed.add_setter(header, "show-back-button", True)
 
         self.pages = build_pages(self)
         self.add_breakpoint(self._bp_narrow)
@@ -131,6 +132,7 @@ class MainWindow(Adw.ApplicationWindow):
         service.on("snapshot", self._on_snapshot)
         service.on("battery", self._on_battery)
         self._on_status(service.status, service.status_detail)
+        service.start()
 
     def responsive(self, obj, prop, narrow_value):
         """Set obj.prop to narrow_value when the content area is narrow."""
@@ -139,28 +141,28 @@ class MainWindow(Adw.ApplicationWindow):
 
     # ------------------------------------------------------------ actions
     def _actions(self):
+        group = Gio.SimpleActionGroup()
+        shortcuts = Gtk.ShortcutController(scope=Gtk.ShortcutScope.MANAGED)
+
         def add(name, cb, accel=None):
             a = Gio.SimpleAction.new(name, None)
             a.connect("activate", lambda *_: cb())
-            self.add_action(a)
+            group.add_action(a)
             if accel:
-                self.get_application().set_accels_for_action(f"win.{name}", [accel])
+                shortcuts.add_shortcut(Gtk.Shortcut.new(Gtk.ShortcutTrigger.parse_string(accel),
+                                                        Gtk.NamedAction.new(f"dev.{name}")))
         add("save", self.save, "<Control>s")
         add("refresh", self.refresh, "F5")
-        add("about", self._about)
         add("backups", lambda: (storage.BACKUP_DIR.mkdir(parents=True, exist_ok=True),
                                 Gio.AppInfo.launch_default_for_uri(storage.BACKUP_DIR.as_uri(), None)))
+        self.insert_action_group("dev", group)
+        self.add_controller(shortcuts)
 
-    def _about(self):
-        about = Adw.AboutDialog(
-            application_name=storage.APP_NAME, application_icon=storage.APP_ID, version="1.0.0",
-            developer_name="ghub-linuxported contributors", license_type=Gtk.License.MIT_X11,
-            comments="Local, offline control panel for the Logitech G PRO X2 SUPERSTRIKE on Linux.\n"
-                     "Not affiliated with or endorsed by Logitech.")
-        about.add_credit_section("Protocol research", [
-            "xatuke/logitech-superstrike-pro-x2-controller", "kazehana99k (HITS 0x1B0C)",
-            "oddvalue & mclol0/linux-superstrike", "Solaar & libratbag"])
-        about.present(self)
+    def close(self):
+        """Called when the view is popped: drop unsaved live tweaks and stop the worker."""
+        if self.is_dirty() and self.editing_active and self.service.status == "connected":
+            self.live_restore_from(self.snapshot.profiles.get(self.editing_sector))
+        self.service.stop()
 
     # ------------------------------------------------------------ navigation
     def _on_nav(self, _lb, row):
@@ -395,5 +397,4 @@ class MainWindow(Adw.ApplicationWindow):
             self.run(job)
 
     def toast(self, text, timeout=3):
-        t = Adw.Toast(title=GLib.markup_escape_text(str(text)), timeout=timeout)
-        self.toasts.add_toast(t)
+        self.shell.toast(text, timeout)

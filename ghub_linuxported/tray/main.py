@@ -1,12 +1,9 @@
-"""ghub-linuxported-tray: battery in your bar, alerts, quick DPI/profile switching,
-and re-applying live-only settings whenever the mouse (re)connects."""
+"""Tray integration (runs inside the app process): battery in your bar, alerts,
+quick DPI/profile switching, re-applying live-only settings on reconnect, and
+keeping the app alive in the background when the window is closed."""
 from __future__ import annotations
 
-import shutil
-import signal
-import subprocess
 import sys
-from pathlib import Path
 
 import gi
 
@@ -24,9 +21,23 @@ def battery_icon(percent: int, charging: bool) -> str:
     return f"battery-level-{level}{'-charging' if charging else ''}-symbolic"
 
 
+def tray_host_available() -> bool:
+    """True when a StatusNotifierWatcher (Waybar tray, KDE, ...) is running."""
+    from gi.repository import Gio
+    try:
+        bus = Gio.bus_get_sync(Gio.BusType.SESSION)
+        r = bus.call_sync("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus",
+                          "NameHasOwner", GLib.Variant("(s)", ("org.kde.StatusNotifierWatcher",)),
+                          GLib.VariantType("(b)"), Gio.DBusCallFlags.NONE, 1000, None)
+        return r.unpack()[0]
+    except GLib.Error:
+        return False
+
+
 class Tray:
-    def __init__(self):
-        self.loop = GLib.MainLoop()
+    def __init__(self, on_open, on_quit):
+        self._on_open, self._on_quit = on_open, on_quit
+        self.extra_devices = []  # other devices from the landing-page scan (battery lines)
         self.cfg = storage.load_config()
         self.svc = DeviceService(dispatch=lambda fn, *a: GLib.idle_add(lambda: fn(*a) and False),
                                  swid=SWID_TRAY, poll_battery_s=60)
@@ -89,11 +100,7 @@ class Tray:
 
     # ---------------- actions
     def open_app(self):
-        # Absolute path: the session (systemd / compositor) PATH may lack ~/.local/bin.
-        launcher = Path(__file__).resolve().parents[2] / "bin" / "ghub-linuxported"
-        exe = str(launcher) if launcher.exists() else shutil.which("ghub-linuxported")
-        cmd = [exe] if exe else [sys.executable, "-m", "ghub_linuxported"]
-        subprocess.Popen(cmd, start_new_session=True)
+        self._on_open()
 
     def set_stage(self, i):
         self.svc.submit(lambda s: s.apply_stage(i), lambda _r: (self.rebuild_menu(), self.on_battery(
@@ -142,22 +149,49 @@ class Tray:
                      for e in snap.directory if e.enabled]
             if len(profs) > 1:
                 items.append(MenuItem("Profile", children=profs))
+        others = [d for d in self.extra_devices if d.kind != "mouse" and d.battery and d.awake]
+        if others:
+            items.append(MenuItem(separator=True))
+            for d in others:
+                items.append(MenuItem(f"{d.title} — {d.battery.percent}%", enabled=False,
+                                      icon=battery_icon(d.battery.percent, d.battery.charging)))
         items.append(MenuItem(separator=True))
-        items.append(MenuItem("Open G HUB (Linux ported)", callback=self.open_app))
-        items.append(MenuItem("Quit tray", callback=self.quit))
+        items.append(MenuItem("Open G HUB", callback=self.open_app))
+        items.append(MenuItem("Quit", callback=self.quit))
         self.item.set_menu(items)
 
-    def quit(self):
-        self.svc.stop()
-        self.loop.quit()
+    def keyboard_battery(self, dev):
+        """Low-battery alert + menu update for keyboards (battery from their service)."""
+        b = dev.battery
+        known = {d.key: d for d in self.extra_devices}
+        known[dev.key] = dev
+        self.extra_devices = list(known.values())
+        low = self.cfg.get("low_battery_percent", 15)
+        flag = f"_low_{dev.key}"
+        if b and not b.charging and b.percent <= low and self.cfg.get("notify_low_battery"):
+            if not getattr(self, flag, False):
+                notify(f"{dev.title} battery low", f"{b.percent}% left. Plug in the USB-C cable.",
+                       battery_icon(b.percent, False), urgency=2)
+                setattr(self, flag, True)
+        elif b and (b.charging or b.percent > low + 5):
+            setattr(self, flag, False)
+        self.rebuild_menu()
 
-    def run(self):
+    def set_devices(self, devs):
+        self.extra_devices = devs
+        self.rebuild_menu()
+
+    def quit(self):
+        self._on_quit()
+
+    def start(self):
         self.svc.start()
-        GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGTERM, lambda: self.quit() or False)
-        GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGINT, lambda: self.quit() or False)
-        self.loop.run()
+
+    def stop(self):
+        self.svc.stop()
 
 
 def main():
-    Tray().run()
-    return 0
+    """`ghub-linuxported-tray`: start the app hidden in the tray (single instance)."""
+    from ..ui.app import App
+    return App().run([sys.argv[0], "--background"])

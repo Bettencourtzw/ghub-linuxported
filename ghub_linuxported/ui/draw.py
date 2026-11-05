@@ -25,7 +25,12 @@ def with_alpha(c: Gdk.RGBA, a: float) -> Gdk.RGBA:
     return rgba(c.red, c.green, c.blue, a)
 
 
+ACCENT_OVERRIDE: Gdk.RGBA | None = None  # set by theme.apply()
+
+
 def accent() -> Gdk.RGBA:
+    if ACCENT_OVERRIDE is not None:
+        return ACCENT_OVERRIDE
     try:
         return Adw.StyleManager.get_default().get_accent_color_rgba()
     except AttributeError:

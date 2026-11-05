@@ -8,10 +8,7 @@ fresh read -> backup -> write -> byte-exact read-back -> profile reload.
 from __future__ import annotations
 
 import copy
-import queue
-import threading
 import time
-import traceback
 from dataclasses import dataclass, field
 
 from .hidpp.mouse import (Mouse, Battery, Identity, OnboardInfo, HitsButton, FeatureMissing,
@@ -20,6 +17,7 @@ from .hidpp.mouse import (Mouse, Battery, Identity, OnboardInfo, HitsButton, Fea
 from .hidpp.transport import HidppError, HidppTimeout, DeviceGone, SWID_GUI
 from .model.profile import Profile, DirectoryEntry, parse_directory, build_directory, crc_ok, with_crc
 from . import storage
+from .worker import DeviceWorker
 
 ROM_FACTORY_PROFILE = 0x0101
 
@@ -59,135 +57,29 @@ class Snapshot:
         return bool(self.identity and self.identity.connection.startswith("Wired"))
 
 
-class DeviceService:
-    def __init__(self, dispatch=None, swid: int = SWID_GUI, poll_battery_s: float = 30.0):
-        self.dispatch = dispatch or (lambda fn, *a: fn(*a))
+class DeviceService(DeviceWorker):
+    """Worker for the PRO X2 SUPERSTRIKE (or close relatives)."""
+    noun = "mouse"
+
+    def __init__(self, dispatch=None, swid: int = SWID_GUI, poll_battery_s: float = 30.0,
+                 node: str | None = None, dev_index: int | None = None):
+        super().__init__(dispatch, poll_battery_s)
         self.swid = swid
-        self.poll_battery_s = poll_battery_s
-        self.mouse: Mouse | None = None
+        self.node, self.dev_index = node, dev_index
         self.snapshot = Snapshot()
-        self.status = "searching"  # searching | permission | connected | asleep
-        self.status_detail = ""
-        self._jobs: queue.Queue = queue.Queue()
-        self._listeners: dict[str, list] = {}
-        self._stop = threading.Event()
-        self._thread = threading.Thread(target=self._run, name="ghub-device", daemon=True)
 
-    # ---------- events ----------
-    def on(self, event: str, cb):
-        """Events: status(status, detail), snapshot(snapshot), battery(battery), trace(dir, bytes)."""
-        self._listeners.setdefault(event, []).append(cb)
+    @property
+    def mouse(self) -> Mouse | None:
+        return self.dev
 
-    def _emit(self, event: str, *args):
-        for cb in self._listeners.get(event, []):
-            self.dispatch(cb, *args)
+    @mouse.setter
+    def mouse(self, value):
+        self.dev = value
 
-    def start(self):
-        self._thread.start()
+    def open_device(self):
+        return Mouse.open(self.swid, node=self.node, dev_index=self.dev_index)
 
-    def stop(self):
-        self._stop.set()
-        self._jobs.put(None)
-
-    def submit(self, fn, on_done=None, on_error=None):
-        """Run fn(service) on the device thread."""
-        self._jobs.put((fn, on_done, on_error))
-
-    # ---------- worker ----------
-    def _set_status(self, status: str, detail: str = ""):
-        if (status, detail) != (self.status, self.status_detail):
-            self.status, self.status_detail = status, detail
-            self._emit("status", status, detail)
-
-    def _run(self):
-        next_battery = 0.0
-        while not self._stop.is_set():
-            if self.mouse is None:
-                self._try_connect()
-                if self.mouse is None:
-                    self._drain_jobs_disconnected(timeout=2.0)
-                    continue
-                next_battery = time.monotonic() + self.poll_battery_s
-            try:
-                job = self._jobs.get(timeout=max(0.1, next_battery - time.monotonic()))
-            except queue.Empty:
-                job = "battery"
-            if job is None:
-                break
-            if job == "battery":
-                next_battery = time.monotonic() + self.poll_battery_s
-                self._safe(self._poll_battery)
-                continue
-            fn, on_done, on_error = job
-            try:
-                result = fn(self)
-                if on_done:
-                    self.dispatch(on_done, result)
-            except (HidppTimeout, DeviceGone) as exc:
-                self._lost(exc)
-                if on_error:
-                    self.dispatch(on_error, exc)
-            except Exception as exc:  # report every failure to the UI
-                traceback.print_exc()
-                if on_error:
-                    self.dispatch(on_error, exc)
-        if self.mouse:
-            self.mouse.close()
-
-    def _drain_jobs_disconnected(self, timeout: float):
-        try:
-            job = self._jobs.get(timeout=timeout)
-        except queue.Empty:
-            return
-        if job is None:
-            self._stop.set()
-            return
-        if job == "battery":
-            return
-        _fn, _done, on_error = job
-        if on_error:
-            self.dispatch(on_error, ConnectionError("The mouse is not connected"))
-
-    def _safe(self, fn):
-        try:
-            fn()
-        except (HidppTimeout, DeviceGone) as exc:
-            self._lost(exc)
-        except Exception:
-            traceback.print_exc()
-
-    def _lost(self, exc):
-        if self.mouse and isinstance(exc, HidppTimeout) and self.mouse.ping():
-            return  # transient timeout, link still fine
-        if self.mouse:
-            self.mouse.close()
-        self.mouse = None
-        self._set_status("asleep", "The mouse stopped answering. Move it to wake it up.")
-
-    def _try_connect(self):
-        try:
-            m = Mouse.open(self.swid)
-        except PermissionError as exc:
-            self._set_status("permission", str(exc))
-            return
-        except (FileNotFoundError, OSError) as exc:
-            if self.status != "asleep":
-                self._set_status("searching", str(exc))
-            return
-        trace = [cb for cb in self._listeners.get("trace", [])]
-        if trace:
-            m.t.trace = lambda d, b: self._emit("trace", d, b)
-        self.mouse = m
-        try:
-            self.refresh()
-            self._set_status("connected", m.connection)
-        except (HidppTimeout, DeviceGone, HidppError) as exc:
-            traceback.print_exc()
-            m.close()
-            self.mouse = None
-            self._set_status("asleep", f"Connected, but the mouse did not answer ({exc}). Move it to wake it.")
-
-    def _poll_battery(self):
+    def poll(self):
         self.snapshot.battery = self.mouse.battery()
         self._emit("battery", self.snapshot.battery)
 
@@ -256,6 +148,10 @@ class DeviceService:
         self.snapshot.surface = mode
 
     def apply_rate(self, hz: int):
+        # The firmware rejects live rate changes in onboard mode (INVALID_ARGUMENT);
+        # there the rate comes from the profile and applies on save/reload.
+        if self.snapshot.mode != HOST_MODE:
+            return
         self.mouse.rate_set_live(hz)
         self.snapshot.rate_live_hz = hz
 

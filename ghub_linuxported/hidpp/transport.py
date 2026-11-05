@@ -82,9 +82,9 @@ def match_reply(report: bytes, feature_index: int, function: int, swid: int):
         if report[3] == feature_index and (report[4] & 0x0F) == swid:
             return "error", HidppError(feature_index, function, report[5], bytes(report))
         return None, None
-    # Match on feature index + swid only: some setters echo the function nibble
-    # inconsistently, and we drain stale traffic before every request anyway.
-    if report[2] == feature_index and (report[3] & 0x0F) == swid:
+    # Match feature index, function AND swid: a late reply to an earlier request
+    # (e.g. a retried ping) must never be taken as the answer to this one.
+    if report[2] == feature_index and report[3] == (((function & 0x0F) << 4) | swid):
         return "ok", bytes(report[4:])
     return None, None
 

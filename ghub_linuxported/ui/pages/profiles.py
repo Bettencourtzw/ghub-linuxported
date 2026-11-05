@@ -46,7 +46,7 @@ class ProfilesPage(Page):
         self.backup_group = self.group("Backups", "Taken automatically before every write to the mouse.")
         self.backup_rows = []
         openb = Gtk.Button(icon_name="folder-open-symbolic", css_classes=["flat"], tooltip_text="Open folder")
-        openb.connect("clicked", lambda *_: self.win.activate_action("win.backups", None))
+        openb.connect("clicked", lambda *_: self.win.activate_action("dev.backups", None))
         self.backup_group.set_header_suffix(openb)
         self.page = self.prefs_page(mode, self.list_group, io, self.backup_group)
         return self.page
@@ -204,7 +204,7 @@ class ProfilesPage(Page):
                     "profile": e.to_json()}
             Path(f.get_path()).write_text(json.dumps(data, indent=2))
             self.win.toast(f"Exported to {f.get_basename()}")
-        fd.save(self.win, None, done)
+        fd.save(self.win.get_root(), None, done)
 
     def _import(self):
         fd = Gtk.FileDialog(title="Import profile")
@@ -229,7 +229,7 @@ class ProfilesPage(Page):
             self.win.reload_pages()
             self.win.changed()
             self.win.toast("Imported — review and save to the mouse")
-        fd.open(self.win, None, done)
+        fd.open(self.win.get_root(), None, done)
 
     # ---------------- backups
     def _restore(self, b):

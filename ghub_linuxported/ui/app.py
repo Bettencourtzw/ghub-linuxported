@@ -1,75 +1,170 @@
+"""Application: single instance, tray integration, close-to-tray, themes."""
 from __future__ import annotations
 
+import signal
 import sys
 
 import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, Gdk, GLib, Gtk  # noqa: E402
+from gi.repository import Adw, Gio, GLib, Gtk  # noqa: E402
 
-from ..service import DeviceService  # noqa: E402
-from ..hidpp.transport import SWID_GUI  # noqa: E402
 from .. import storage  # noqa: E402
-
-CSS = b"""
-.hero {
-  padding: 8px;
-  background-image: linear-gradient(135deg, alpha(@accent_bg_color, 0.16), alpha(@accent_bg_color, 0.02) 60%);
-}
-.chip {
-  padding: 4px 12px;
-  border-radius: 999px;
-  background: alpha(currentColor, 0.08);
-  font-weight: 600;
-  font-size: 0.9em;
-}
-.chip.accent { background: alpha(@accent_bg_color, 0.18); color: @accent_color; }
-.tile { padding: 16px 18px; min-height: 84px; }
-.hits-card { padding: 20px 22px; }
-.click-pad { min-height: 260px; }
-.console { font-size: 0.9em; }
-.display { font-size: 42px; font-weight: 800; }
-label.accent { color: @accent_color; }
-"""
+from . import theme  # noqa: E402
 
 
 class App(Adw.Application):
     def __init__(self):
-        super().__init__(application_id=storage.APP_ID)
+        super().__init__(application_id=storage.APP_ID, flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE)
         GLib.set_application_name(storage.APP_NAME)
-        self.service = None
         self.win = None
+        self.tray = None
+        self._held = False
+        self._told_tray = False
+        self.add_main_option("background", ord("b"), GLib.OptionFlags.NONE, GLib.OptionArg.NONE,
+                             "Start hidden in the tray", None)
 
+    # ---------- lifecycle
     def do_startup(self):
         Adw.Application.do_startup(self)
-        provider = Gtk.CssProvider()
-        provider.load_from_data(CSS)
-        Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), provider,
-                                                  Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
-        scheme = storage.load_config().get("color_scheme", "system")
-        Adw.StyleManager.get_default().set_color_scheme(
-            {"light": Adw.ColorScheme.FORCE_LIGHT, "dark": Adw.ColorScheme.FORCE_DARK}.get(
-                scheme, Adw.ColorScheme.DEFAULT))
-        self.set_accels_for_action("app.quit", ["<Control>q"])
-        from gi.repository import Gio
-        quit_action = Gio.SimpleAction.new("quit", None)
-        quit_action.connect("activate", lambda *_: self.quit())
-        self.add_action(quit_action)
+        cfg = storage.load_config()
+        theme.apply(cfg.get("theme", "ghub"))
+
+        def act(name, cb, param=None, accels=None):
+            a = Gio.SimpleAction.new(name, GLib.VariantType(param) if param else None)
+            a.connect("activate", lambda _a, p: cb(p))
+            self.add_action(a)
+            if accels:
+                self.set_accels_for_action(f"app.{name}" if not param else f"app.{name}::x", accels)
+        act("quit", lambda _p: self.really_quit(), accels=["<Control>q"])
+        act("about", lambda _p: self._about())
+        act("rescan", lambda _p: self.win and self.win.home.rescan())
+        act("theme", lambda p: self._set_theme(p.get_string()), param="s")
+
+        # Always run the tray: the item (re)registers whenever a tray host
+        # (Waybar, KDE...) appears, so a bar restart brings the icon back.
+        from ..tray.main import Tray
+        self.tray = Tray(on_open=self.show_window, on_quit=self.really_quit)
+        self.tray.start()
+        self.hold()  # keep running without a window
+        self._held = True
+        self.keyboards = {}  # FoundDevice.key -> KeyboardService (lives as long as the app)
+        self._restore_keyboards()
+        GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGTERM, lambda: self.really_quit() or False)
+        GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGINT, lambda: self.really_quit() or False)
+
+    def do_command_line(self, cmdline):
+        opts = cmdline.get_options_dict().end().unpack()
+        if opts.get("background") and self.tray:
+            return 0
+        self.show_window()
+        return 0
 
     def do_activate(self):
-        if self.win is None:
-            from .window import MainWindow
-            self.service = DeviceService(dispatch=lambda fn, *a: GLib.idle_add(lambda: fn(*a) and False),
-                                         swid=SWID_GUI)
-            self.win = MainWindow(self, self.service)
-            self.service.start()
-        self.win.present()
+        self.show_window()
 
-    def do_shutdown(self):
-        if self.service:
-            self.service.stop()
-        Adw.Application.do_shutdown(self)
+    def show_window(self):
+        if self.win is None:
+            from .shell import AppWindow
+            self.win = AppWindow(self)
+            self.win.connect("close-request", self._on_close)
+        self.win.set_visible(True)
+        self.win.present()
+        self.win.home.paused = self.win.nav.get_visible_page() is not self.win.home
+        self.win.home.rescan()
+
+    def _on_close(self, win):
+        win.set_visible(False)
+        win.home.paused = True  # don't keep waking wireless devices while hidden
+        if not self._told_tray:
+            self._told_tray = True
+            from ..tray.sni import notify
+            from ..tray.main import tray_host_available
+            where = ("Right-click the tray icon and choose Quit to exit." if tray_host_available() else
+                     "Open it again from the app menu; use the menu's Quit (Ctrl+Q) to exit.")
+            notify("G HUB is still running in the background", where, "io.github.ghub_linuxported")
+        return True
+
+    def really_quit(self):
+        if self.win:
+            for page in list(self.win.nav.get_navigation_stack()):
+                view = getattr(page, "view", None)
+                if view:
+                    view.close()
+        for svc in self.keyboards.values():
+            svc.stop(wait=2.0)  # gives lighting control back to the keyboard
+        if self.tray:
+            self.tray.stop()
+        if self._held:
+            self.release()
+            self._held = False
+        self.quit()
+
+    def devices_changed(self, devs):
+        if self.tray:
+            self.tray.set_devices(devs)
+
+    # ---------- keyboards (lighting must be kept alive by a running service)
+    def keyboard_service(self, found):
+        svc = self.keyboards.get(found.key)
+        if svc is None:
+            from ..keyboard_service import KeyboardService
+            svc = KeyboardService(lambda fn, *a: GLib.idle_add(lambda: fn(*a) and False), found)
+            svc.on("battery", lambda b, f=found: self._keyboard_battery(f, b))
+            self.keyboards[found.key] = svc
+            svc.start()
+        return svc
+
+    def keyboard_view_closed(self, found):
+        svc = self.keyboards.get(found.key)
+        if svc and svc.state.get("mode") == "onboard":
+            svc.stop()  # nothing to keep alive
+            del self.keyboards[found.key]
+
+    def _keyboard_battery(self, found, battery):
+        found.battery = battery
+        if self.tray:
+            self.tray.keyboard_battery(found)
+
+    def _restore_keyboards(self):
+        """Start services for keyboards with saved custom lighting (also when started hidden)."""
+        import threading
+        from ..devices import scan
+        from ..keyboard_service import load_state, config_key
+
+        def work():
+            try:
+                devs, _ = scan()
+            except Exception as exc:  # noqa: BLE001
+                print("startup scan failed:", exc)
+                return
+            GLib.idle_add(lambda: [self.keyboard_service(d) for d in devs
+                                   if d.model == "keyboard" and load_state(config_key(d))["mode"] != "onboard"]
+                          and False)
+            GLib.idle_add(lambda: self.devices_changed(devs) and False)
+        threading.Thread(target=work, daemon=True).start()
+
+    # ---------- misc
+    def _set_theme(self, name):
+        cfg = storage.load_config()
+        cfg["theme"] = name
+        storage.save_config(cfg)
+        theme.apply(name)
+        if self.win:
+            self.win.queue_draw()
+
+    def _about(self):
+        about = Adw.AboutDialog(
+            application_name=storage.APP_NAME, application_icon=storage.APP_ID, version="2.0.0",
+            developer_name="Bettencourtzw", license_type=Gtk.License.MIT_X11,
+            website="https://github.com/Bettencourtzw/ghub-linuxported",
+            comments="Local, offline control panel for Logitech G devices on Linux.\n"
+                     "Not affiliated with or endorsed by Logitech.")
+        about.add_credit_section("Protocol research", [
+            "xatuke/logitech-superstrike-pro-x2-controller", "kazehana99k (HITS 0x1B0C)",
+            "oddvalue & mclol0/linux-superstrike", "Solaar & libratbag", "OpenRGB"])
+        about.present(self.win)
 
 
 def main():
