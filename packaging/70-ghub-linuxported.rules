@@ -1,0 +1,4 @@
+# ghub-linuxported: give the logged-in (seat) user access to Logitech HID++ nodes.
+# The file number must sort BEFORE systemd's 73-seat-late.rules, which is what
+# turns the uaccess tag into a per-user ACL. A 99- rule is applied too late.
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="046d", TAG+="uaccess"
