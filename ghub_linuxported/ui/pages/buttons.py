@@ -26,6 +26,7 @@ class ButtonsPage(Page):
         clamp = Adw.Clamp(maximum_size=1100, margin_top=24, margin_bottom=24, margin_start=16, margin_end=16)
         outer.set_child(clamp)
         box = Gtk.Box(spacing=24)
+        self.win.responsive(box, "orientation", Gtk.Orientation.VERTICAL)
         clamp.set_child(box)
 
         left = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12, css_classes=["card"], hexpand=True,
@@ -41,7 +42,7 @@ class ButtonsPage(Page):
         left.append(self.diagram)
         box.append(left)
 
-        right = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=24, width_request=380)
+        right = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=24, width_request=340)
         box.append(right)
         self.list_group = Adw.PreferencesGroup(title="Assignments",
                                                description="Click a button on the mouse or in this list.")

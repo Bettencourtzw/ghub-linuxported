@@ -18,14 +18,15 @@ from ghub_linuxported.hidpp.mouse import Identity, Battery, OnboardInfo, HitsBut
 from ghub_linuxported.model.profile import Profile, parse_directory, DirectoryEntry  # noqa: E402
 from ghub_linuxported.ui.app import App  # noqa: E402
 
+SIZE = (1400, 900)
 FIX = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "xatuke_profile1.bin"
 
 
 def fake_snapshot():
     raw = FIX.read_bytes()
     s = Snapshot()
-    s.identity = Identity(name="PRO X2 SUPERSTRIIKE", unit_id="59-1b-2f-d5", model_id="40BDC0A80000",
-                          model_string="2621LVL73V98", firmware=["Bootloader: BL2 73.00.B0011", "Main: MPM 42.00.B0011"],
+    s.identity = Identity(name="PRO X2 SUPERSTRIKE", unit_id="00-00-00-00", model_id="40BDC0A80000",
+                          model_string="0000XXXXXXXX", firmware=["Bootloader: BL2 73.00.B0011", "Main: MPM 42.00.B0011"],
                           protocol="4.2", connection="LIGHTSPEED wireless", node="/dev/hidraw8")
     s.battery = Battery(72, 0, False)
     s.onboard = OnboardInfo(1, 8, 1, 5, 1, 5, 16, 255)
@@ -89,8 +90,18 @@ def main():
     def setup():
         if dark:
             Adw.StyleManager.get_default().set_color_scheme(Adw.ColorScheme.FORCE_DARK)
-        app.win.set_default_size(1280, 900)
-        GLib.timeout_add(1500, shoot)
+        app.win.set_default_size(*SIZE)
+        # Under Hyprland the window is tiled; float + size just this window for screenshots.
+        import os, shutil, subprocess
+        if shutil.which("hyprctl") and os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
+            def hypr():
+                pid = os.getpid()
+                subprocess.run(["hyprctl", "dispatch", "setfloating", f"pid:{pid}"], capture_output=True)
+                subprocess.run(["hyprctl", "dispatch", "resizewindowpixel", f"exact {SIZE[0]} {SIZE[1]},pid:{pid}"],
+                               capture_output=True)
+                return False
+            GLib.timeout_add(600, hypr)
+        GLib.timeout_add(2000, shoot)
         return False
     app.connect("activate", lambda *_: GLib.idle_add(setup))
     app.run([])

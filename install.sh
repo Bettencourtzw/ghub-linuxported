@@ -32,9 +32,12 @@ mkdir -p "$BIN" "$APPS" "$ICONS" "$UNITS"
 for b in ghub-linuxported ghub-linuxported-tray ghub-linuxported-cli; do
   ln -sf "$REPO/bin/$b" "$BIN/$b"
 done
-install -m644 "$REPO/packaging/io.github.ghub_linuxported.desktop" "$APPS/"
+# Absolute Exec path: compositors like Hyprland often don't have ~/.local/bin in PATH.
+sed "s|^Exec=ghub-linuxported|Exec=$REPO/bin/ghub-linuxported|" \
+  "$REPO/packaging/io.github.ghub_linuxported.desktop" > "$APPS/io.github.ghub_linuxported.desktop"
+chmod 644 "$APPS/io.github.ghub_linuxported.desktop"
 install -m644 "$REPO/packaging/icons/io.github.ghub_linuxported.svg" "$ICONS/"
-install -m644 "$REPO/packaging/ghub-linuxported-tray.service" "$UNITS/"
+sed "s|@REPO@|$REPO|" "$REPO/packaging/ghub-linuxported-tray.service" > "$UNITS/ghub-linuxported-tray.service"
 command -v update-desktop-database >/dev/null && update-desktop-database "$APPS" 2>/dev/null || true
 gtk-update-icon-cache -q -t "${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor" 2>/dev/null || true
 systemctl --user daemon-reload 2>/dev/null || true

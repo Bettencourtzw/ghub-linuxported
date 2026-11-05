@@ -1,93 +1,80 @@
+<div align="center">
+
+<img src="packaging/icons/io.github.ghub_linuxported.svg" width="96" alt="">
+
 # G HUB Linux Ported
 
-A local, offline control panel for the **Logitech G PRO X2 SUPERSTRIKE** on Linux.
-Native GTK4 / libadwaita app, a tray helper for your bar, and a CLI. No account,
-no cloud, no Wine, no background daemon required. Not affiliated with Logitech.
+**Native Linux control panel for the Logitech G PRO X2 SUPERSTRIKE.**<br>
+HITS switches, DPI, polling rate, buttons, bhop mode, profiles. Local and offline.
+
+![Linux](https://img.shields.io/badge/Linux-GTK4%20%2B%20libadwaita-3584e4?style=flat-square)
+![Python](https://img.shields.io/badge/Python-3.11%2B-3776ab?style=flat-square)
+![License](https://img.shields.io/badge/license-MIT-2ea44f?style=flat-square)
+
+<img src="docs/screenshots/overview.png" width="820" alt="Overview">
+
+</div>
 
 ## Features
 
-| Area | What you can do |
-|---|---|
-| **HITS switches** | Per-button actuation point (1–10), rapid trigger (off / 1–5), click haptics (off / 1–5); link both buttons; changes apply live so you feel them instantly |
-| **HITS codes** | Import/export G HUB HITS codes; one-click presets of the pro codes Logitech publishes |
-| **Sensor** | 5 DPI stages (100–44 000, independent X/Y), enable/disable stages, default + DPI-shift stage, lift-off distance per stage, report rate up to 8 kHz wireless / 1 kHz wired, gaming surface mode, angle snapping |
-| **Buttons** | Clickable mouse diagram; remap any button to a mouse button, key/shortcut (press to record), media key, DPI/profile function, or disable; separate G-Shift layer |
-| **Bhop mode** | Bunny-hop scroll filter: 100–1000 ms window, live + stored |
-| **Power** | Low-power and deep-sleep timers; battery level and charge state |
-| **Profiles** | 5 onboard profiles: activate, enable/disable in the on-mouse cycle, rename, copy between slots, factory reset; onboard vs host control mode; JSON import/export |
-| **Safety** | Every flash write: automatic backup → CRC → byte-exact read-back verification → profile reload. One-click restore of any backup. Factory profile is never modified (it's cloned first) |
-| **Tray** | Battery icon in Waybar/KDE tray, low-battery and fully-charged notifications, quick DPI stage + profile switching (scroll on the icon cycles DPI), re-applies live-only settings when the mouse reconnects |
-| **Diagnostics** | Real measured polling rate, click tester (hold time, fastest re-click, CPS, scroll), HID++ feature table, raw HID++ console |
+- **HITS switches**: actuation point, rapid trigger and click haptics per button, applied live
+- **HITS codes**: import and export G HUB codes, one-click pro presets
+- **Sensor**: 5 DPI stages up to 44 000 (X/Y), lift-off distance, up to 8 kHz polling, surface mode
+- **Buttons**: remap to clicks, key combos, media keys or DPI/profile functions, plus a G-Shift layer
+- **Bhop mode**: scroll-wheel filter with an adjustable 100–1000 ms window
+- **Profiles**: 5 onboard profiles, JSON import/export, automatic backups before every write
+- **Tray**: battery in your bar, low-battery alerts, quick DPI and profile switching
+- **Diagnostics**: real measured polling rate, click tester, raw HID++ console
 
-Everything you save goes into the mouse's **onboard memory**, so it works on any
-computer — even without this app running.
+Settings are saved to the mouse's onboard memory, so they keep working on any PC.
+
+<p align="center">
+  <img src="docs/screenshots/hits.png" width="49%" alt="HITS switches">
+  <img src="docs/screenshots/buttons.png" width="49%" alt="Buttons">
+</p>
 
 ## Install
 
-Requirements: Python 3.11+, `python-gobject`, `gtk4`, `libadwaita` ≥ 1.7 (Arch: `sudo pacman -S python-gobject gtk4 libadwaita`).
-
 ```sh
-git clone <this repo> ~/ghub-linuxported
-cd ~/ghub-linuxported
-./install.sh --udev          # launchers + menu entry + icon, and the udev access rule (sudo)
-systemctl --user enable --now ghub-linuxported-tray.service   # optional tray helper
+# Arch: sudo pacman -S python-gobject gtk4 libadwaita
+git clone https://github.com/Bettencourtzw/ghub-linuxported.git
+cd ghub-linuxported
+./install.sh --udev
 ```
 
-On Hyprland without a systemd graphical session, use `exec-once = ghub-linuxported-tray` instead.
+`--udev` installs a rule (needs sudo) that lets your user talk to the mouse.
+Then open **G HUB Linux Ported** from your app menu.
 
-The udev rule (`packaging/70-ghub-linuxported.rules`) grants the logged-in user
-access to Logitech hidraw nodes. It must be numbered below 73 so systemd turns
-the `uaccess` tag into an ACL. The app also offers a one-click install (via
-`pkexec`) when it detects missing permissions.
+Optional tray helper:
 
-Run without installing: `./bin/ghub-linuxported`.
+```sh
+systemctl --user enable --now ghub-linuxported-tray.service
+# or in hyprland.conf:  exec-once = ghub-linuxported-tray
+```
 
 ## CLI
 
 ```sh
-ghub-linuxported-cli scan                 # list Logitech hidraw nodes
-ghub-linuxported-cli status               # battery, mode, DPI, rate, HITS, bhop, surface
-ghub-linuxported-cli features             # HID++ feature table
-ghub-linuxported-cli dump [DIR]           # read-only dump of every profile sector
-ghub-linuxported-cli hits --code MDAwNDA1MDMwNTEwMDQwMw==   # apply a HITS code (live)
-ghub-linuxported-cli hits --actuation 3 --rapid-trigger 2 --haptics 4 [--left|--right]
-ghub-linuxported-cli rate                 # measure the real polling rate
+ghub-linuxported-cli status                              # battery, DPI, rate, HITS, bhop
+ghub-linuxported-cli hits --code MDAwNDA1MDMwNTEwMDQwMw==  # apply a HITS code
+ghub-linuxported-cli rate                                # measure real polling rate
+ghub-linuxported-cli dump                                # read-only dump of onboard memory
 ```
 
-## How settings are stored
+## Safety
 
-| Setting | Applied live via | Stored in profile at |
-|---|---|---|
-| HITS (actuation / RT / haptics) | `0x1B0C` fn1 | `0x26–0x2B` |
-| Bhop window | `0x80E0` fn2 | `0x25` |
-| Report rate | `0x8061` fn3 | `0x00` wireless, `0x01` wired |
-| DPI stage select | `0x8100` fn12 | default stage `0x02` |
-| DPI stages / LOD | (profile reload) | `0x04` + 5×5 bytes |
-| Buttons / G-Shift | (profile reload) | `0x30` / `0x70` |
-| Surface mode | `0x8090` fn1 | live only — re-applied by the tray |
-
-Full protocol notes: [`docs/PROTOCOL.md`](docs/PROTOCOL.md).
-
-## Files
-
-- Config: `~/.config/ghub-linuxported/config.json`
-- Backups: `~/.local/share/ghub-linuxported/backups/` (never auto-deleted)
-
-## Development
-
-```sh
-python3 -m unittest discover -s tests -t .      # unit tests (no hardware)
-python3 tools/ui_preview.py /tmp/shots --dark   # render every page with a simulated mouse
-```
+Every write to the mouse is backed up first, checked with a CRC and verified
+byte-for-byte. Backups live in `~/.local/share/ghub-linuxported/backups` and
+can be restored from the Profiles page.
 
 ## Credits
 
-Protocol knowledge comes from the community's reverse-engineering work:
-[xatuke/logitech-superstrike-pro-x2-controller](https://github.com/xatuke/logitech-superstrike-pro-x2-controller),
-[kazehana99k (HITS 0x1B0C)](https://github.com/kazehana99k/Logitech-PRO-X2-SUPERSTRIKE-Linux-haptics-actuation-control-),
-[oddvalue](https://github.com/oddvalue/linux-superstrike) / [mclol0](https://github.com/mclol0/linux-superstrike) linux-superstrike,
-[Solaar](https://github.com/pwr-Solaar/Solaar) and [libratbag](https://github.com/libratbag/libratbag).
-This code is an independent implementation. "Logitech", "G HUB" and "PRO X2 SUPERSTRIKE"
-are trademarks of Logitech, used only to describe compatibility.
+Built on the community's reverse-engineering work:
+[xatuke](https://github.com/xatuke/logitech-superstrike-pro-x2-controller),
+[kazehana99k](https://github.com/kazehana99k/Logitech-PRO-X2-SUPERSTRIKE-Linux-haptics-actuation-control-),
+[linux-superstrike](https://github.com/mclol0/linux-superstrike),
+[Solaar](https://github.com/pwr-Solaar/Solaar) and
+[libratbag](https://github.com/libratbag/libratbag).
+Protocol notes: [docs/PROTOCOL.md](docs/PROTOCOL.md).
 
-License: MIT.
+<sub>Not affiliated with Logitech. "Logitech", "G HUB" and "PRO X2 SUPERSTRIKE" are trademarks of Logitech. MIT licensed.</sub>

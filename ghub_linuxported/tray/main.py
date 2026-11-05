@@ -6,6 +6,7 @@ import shutil
 import signal
 import subprocess
 import sys
+from pathlib import Path
 
 import gi
 
@@ -88,7 +89,9 @@ class Tray:
 
     # ---------------- actions
     def open_app(self):
-        exe = shutil.which("ghub-linuxported")
+        # Absolute path: the session (systemd / compositor) PATH may lack ~/.local/bin.
+        launcher = Path(__file__).resolve().parents[2] / "bin" / "ghub-linuxported"
+        exe = str(launcher) if launcher.exists() else shutil.which("ghub-linuxported")
         cmd = [exe] if exe else [sys.executable, "-m", "ghub_linuxported"]
         subprocess.Popen(cmd, start_new_session=True)
 

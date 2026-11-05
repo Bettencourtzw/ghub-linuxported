@@ -27,7 +27,9 @@ class OverviewPage(Page):
         self.diagram.set_margin_top(16)
         self.diagram.set_margin_bottom(16)
         hero.append(self.diagram)
-        info = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, valign=Gtk.Align.CENTER, hexpand=True)
+        self.win.responsive(self.diagram, "visible", False)
+        info = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, valign=Gtk.Align.CENTER, hexpand=True,
+                       margin_start=20, margin_top=16, margin_bottom=16)
         self.name = Gtk.Label(xalign=0, css_classes=["title-1"], wrap=True)
         self.conn = Gtk.Label(xalign=0, css_classes=["dim-label"])
         info.append(Gtk.Label(label="LOGITECH G", xalign=0, css_classes=["caption-heading", "accent"]))

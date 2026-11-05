@@ -4,7 +4,7 @@ PartOf=graphical-session.target
 After=graphical-session.target
 
 [Service]
-ExecStart=%h/.local/bin/ghub-linuxported-tray
+ExecStart=@REPO@/bin/ghub-linuxported-tray
 Restart=on-failure
 RestartSec=5
 

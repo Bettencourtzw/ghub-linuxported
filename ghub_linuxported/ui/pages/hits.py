@@ -90,6 +90,7 @@ class HitsPage(Page):
         col.append(top)
 
         cards = Gtk.Box(spacing=16, homogeneous=True)
+        self.win.responsive(cards, "orientation", Gtk.Orientation.VERTICAL)
         self.cards = [ButtonCard(self, 0), ButtonCard(self, 1)]
         for c in self.cards:
             cards.append(c.box)

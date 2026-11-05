@@ -86,7 +86,8 @@ class MainWindow(Adw.ApplicationWindow):
         self.banner = Adw.Banner()
         self.content_tb.add_top_bar(self.banner)
 
-        self.stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE, transition_duration=120)
+        self.stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE, transition_duration=120,
+                               hhomogeneous=False, vhomogeneous=False, interpolate_size=False)
         self.content_tb.set_content(self.stack)
 
         # unsaved-changes bar
@@ -105,12 +106,15 @@ class MainWindow(Adw.ApplicationWindow):
         self.content_tb.add_bottom_bar(self.save_bar)
         self.split.set_content(Adw.NavigationPage(title="Overview", child=self.content_tb))
 
-        # responsive: collapse sidebar on narrow windows
-        bp = Adw.Breakpoint.new(Adw.BreakpointCondition.parse("max-width: 720sp"))
-        bp.add_setter(self.split, "collapsed", True)
-        self.add_breakpoint(bp)
+        # Responsive layout. Only one breakpoint is active at a time, so the
+        # "collapsed" breakpoint repeats every "narrow" setter (see responsive()).
+        self._bp_narrow = Adw.Breakpoint.new(Adw.BreakpointCondition.parse("max-width: 1150sp"))
+        self._bp_collapsed = Adw.Breakpoint.new(Adw.BreakpointCondition.parse("max-width: 720sp"))
+        self._bp_collapsed.add_setter(self.split, "collapsed", True)
 
         self.pages = build_pages(self)
+        self.add_breakpoint(self._bp_narrow)
+        self.add_breakpoint(self._bp_collapsed)
         for page in self.pages:
             self.stack.add_named(page.widget, page.key)
             row = Gtk.ListBoxRow()
@@ -127,6 +131,11 @@ class MainWindow(Adw.ApplicationWindow):
         service.on("snapshot", self._on_snapshot)
         service.on("battery", self._on_battery)
         self._on_status(service.status, service.status_detail)
+
+    def responsive(self, obj, prop, narrow_value):
+        """Set obj.prop to narrow_value when the content area is narrow."""
+        self._bp_narrow.add_setter(obj, prop, narrow_value)
+        self._bp_collapsed.add_setter(obj, prop, narrow_value)
 
     # ------------------------------------------------------------ actions
     def _actions(self):
