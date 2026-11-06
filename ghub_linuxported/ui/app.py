@@ -8,9 +8,10 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, Gio, GLib, Gtk  # noqa: E402
+from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402
 
 from .. import storage  # noqa: E402
+from ..assets import APP_ICON, APP_ICON_NAME  # noqa: E402
 from . import theme  # noqa: E402
 
 
@@ -28,6 +29,8 @@ class App(Adw.Application):
     # ---------- lifecycle
     def do_startup(self):
         Adw.Application.do_startup(self)
+        Gtk.IconTheme.get_for_display(Gdk.Display.get_default()).add_search_path(str(APP_ICON.parent))
+        Gtk.Window.set_default_icon_name(APP_ICON_NAME)
         cfg = storage.load_config()
         theme.apply(cfg.get("theme", "ghub"))
 
@@ -156,7 +159,7 @@ class App(Adw.Application):
 
     def _about(self):
         about = Adw.AboutDialog(
-            application_name=storage.APP_NAME, application_icon=storage.APP_ID, version="2.0.0",
+            application_name=storage.APP_NAME, application_icon=APP_ICON_NAME, version="2.0.0",
             developer_name="Bettencourtzw", license_type=Gtk.License.MIT_X11,
             website="https://github.com/Bettencourtzw/ghub-linuxported",
             comments="Local, offline control panel for Logitech G devices on Linux.\n"

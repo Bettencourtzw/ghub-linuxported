@@ -34,6 +34,9 @@ Features depend on the model and the HID++ capabilities it exposes. Discovery
 of a device does not mean that all of its settings can be changed. GLP is an
 independent project, not an official Linux edition of Logitech G HUB.
 
+See the [device support research](docs/DEVICE-SUPPORT-RESEARCH.md) for candidate
+models, protocol differences and the hardware checks needed to add support.
+
 | Device | Current support |
 |---|---|
 | **PRO X2 SUPERSTRIKE** | HITS actuation, rapid trigger and haptics · DPI stages · polling up to 8 kHz · button remapping · bhop mode · onboard profiles |
@@ -90,5 +93,6 @@ Built on the community's reverse-engineering work:
 [OpenRGB](https://gitlab.com/CalcProgrammer1/OpenRGB) and
 [libratbag](https://github.com/libratbag/libratbag).
 Protocol notes: [docs/PROTOCOL.md](docs/PROTOCOL.md).
+Product artwork: [sources and separate rights notice](packaging/devices/SOURCES.md).
 
 <sub>Not affiliated with Logitech. "Logitech", "G HUB", "LIGHTSYNC", "PRO X2 SUPERSTRIKE" and "G515" are trademarks of Logitech. MIT licensed.</sub>

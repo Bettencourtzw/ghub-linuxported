@@ -10,8 +10,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gio, GLib, Gtk  # noqa: E402
 
 from ..devices import scan, FoundDevice
-from .widgets import MouseDiagram
-from .keyboard_widget import KeyboardWidget
+from ..assets import APP_ICON, device_image
 
 SCAN_EVERY_S = 4
 
@@ -24,18 +23,9 @@ class DeviceTile(Gtk.Button):
         self.set_valign(Gtk.Align.START)
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         self.set_child(box)
-        art = Gtk.Box(halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER, height_request=210)
-        if dev.kind == "mouse":
-            art.append(MouseDiagram(selectable=False, height=190))
-        elif dev.kind == "keyboard":
-            kb = KeyboardWidget(interactive=False, min_height=120)
-            kb.set_size_request(276, 130)
-            kb.fill((0, 168, 232))
-            art.append(kb)
-        else:
-            art.append(Gtk.Image(icon_name="preferences-system-devices-symbolic", pixel_size=96,
-                                 css_classes=["dim-label"]))
-        box.append(art)
+        self.art = Gtk.Box(halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER, height_request=210)
+        self._art_key = None
+        box.append(self.art)
         box.append(Gtk.Label(label=dev.kind.upper(), css_classes=["eyebrow"], margin_top=8))
         self.name = Gtk.Label(label=dev.title.upper(), css_classes=["tile-name"], wrap=True, justify=Gtk.Justification.CENTER)
         box.append(self.name)
@@ -50,6 +40,26 @@ class DeviceTile(Gtk.Button):
 
     def update(self, dev: FoundDevice):
         self.dev = dev
+        path = device_image(dev)
+        art_key = (path, dev.kind)
+        if art_key != self._art_key:
+            self._art_key = art_key
+            child = self.art.get_first_child()
+            if child:
+                self.art.remove(child)
+            if path:
+                picture = Gtk.Picture.new_for_filename(str(path))
+                picture.set_content_fit(Gtk.ContentFit.CONTAIN)
+                picture.set_can_shrink(True)
+                picture.set_alternative_text(f"{dev.title} product image; color and layout may vary")
+                # Overlay children do not contribute the source image's natural size.
+                frame = Gtk.Overlay(width_request=260, height_request=210)
+                frame.add_overlay(picture)
+                self.art.append(frame)
+            else:
+                icon = {"mouse": "input-mouse-symbolic", "keyboard": "input-keyboard-symbolic"}.get(
+                    dev.kind, "preferences-system-devices-symbolic")
+                self.art.append(Gtk.Image(icon_name=icon, pixel_size=96, css_classes=["dim-label"]))
         self.conn.set_label(dev.connection if dev.awake else "Asleep — use it to wake")
         b = dev.battery
         self.batt.set_visible(bool(b) and dev.awake)
@@ -71,7 +81,7 @@ class HomePage(Adw.NavigationPage):
         tb = Adw.ToolbarView()
         header = Adw.HeaderBar()
         brand = Gtk.Box(spacing=10)
-        logo = Gtk.Image(icon_name="io.github.ghub_linuxported", pixel_size=26)
+        logo = Gtk.Image(gicon=Gio.FileIcon.new(Gio.File.new_for_path(str(APP_ICON))), pixel_size=32)
         brand.append(logo)
         brand.append(Gtk.Label(label="G HUB", css_classes=["brand"]))
         brand.append(Gtk.Label(label="LINUX PORTED", css_classes=["eyebrow"]))
@@ -103,7 +113,7 @@ class HomePage(Adw.NavigationPage):
         scroller.set_child(col)
         self.stack.add_named(scroller, "grid")
 
-        self.empty = Adw.StatusPage(icon_name="input-mouse-symbolic", title="Looking for Logitech devices…",
+        self.empty = Adw.StatusPage(icon_name="preferences-system-devices-symbolic", title="Looking for Logitech devices…",
                                     description="Connect a LIGHTSPEED receiver or a USB cable, then wake the "
                                                 "device by moving it or pressing a key.")
         self.empty.set_child(Adw.Spinner(width_request=32, height_request=32))

@@ -1,8 +1,8 @@
 # Project sync
 
 - Canonical source: https://github.com/Bettencourtzw/ghub-linuxported
-- Primary branch: `main`. Use scoped feature branches and reviewed pull requests.
-- Local checkout: `/Users/bettencourt/Documents/ChatGPT/personal/ghub-linuxported`.
+- Primary branch: `main`. Use isolated worktrees. Do not create pull requests; push only when Francisco requests it.
+- Canonical local checkout: `/Users/bettencourt/Documents/ChatGPT/personal/ghub-linuxported`.
 - Personal, non-client project; no Hours tracking.
 - Linux desktop application; no hosted runtime is configured in this checkout.
 - macOS is used for source edits, documentation previews and pure-Python tests.
