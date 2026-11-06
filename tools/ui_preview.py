@@ -122,6 +122,18 @@ def hypr_float(pid, w, h):
     subprocess.run(["hyprctl", "dispatch", "resizewindowpixel", f"exact {w} {h},pid:{pid}"], capture_output=True)
 
 
+class PreviewApp(App):
+    """The hardware-free preview has no tray to keep alive after closing."""
+
+    def do_startup(self):
+        super().do_startup()
+        self.set_accels_for_action("app.quit", ["<Primary>q", "<Control>q"])
+
+    def _on_close(self, _win):
+        self.really_quit()
+        return True
+
+
 def main():
     import argparse
     import tempfile
@@ -166,7 +178,7 @@ def main():
     kb_state = {"mode": "static", "keys": gamer}
     App.keyboard_service = lambda self, found: fake_keyboard_service(found, kb_state)
     App.keyboard_view_closed = lambda self, found, mode: None
-    app = App()
+    app = PreviewApp()
     app.set_application_id("io.github.ghub_linuxported.Preview")
     app.connect("startup", lambda _: Gtk.Settings.get_default().set_property("gtk-icon-theme-name", "Adwaita"))
     W, H = args.width, args.height

@@ -7,6 +7,8 @@ are examples. They do not demonstrate Linux hardware support or hardware tests.
 The preview uses temporary settings, disables real discovery and tray services,
 and never submits commands to hardware. Interactive mode opens the device
 picker and lets you navigate the same interface without connecting devices.
+Closing the preview window exits it. You can also use Ctrl+Q, or Cmd+Q on macOS.
+The Linux app still uses its normal close-to-tray behavior.
 
 Regenerate from the repository root:
 

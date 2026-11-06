@@ -197,3 +197,11 @@ class KeyboardEffectConsistencyTests(unittest.TestCase):
                 time=SimpleNamespace(monotonic=lambda: 0), TKL_ANSI=[SimpleNamespace(usage=4)],
                 _hsv=lambda _: (255, 100, 50))(view)
         view.kb.set_colors.assert_called_once_with({4: (0, 0, 0)})
+
+
+class PreviewExitTests(unittest.TestCase):
+    def test_closing_preview_quits_instead_of_hiding_without_a_tray(self):
+        preview = SimpleNamespace(really_quit=Mock())
+        close = handler('../../tools/ui_preview.py', 'PreviewApp', '_on_close')
+        self.assertTrue(close(preview, Mock()))
+        preview.really_quit.assert_called_once()

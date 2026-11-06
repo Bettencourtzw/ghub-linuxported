@@ -5,6 +5,7 @@ PACKAGING = Path(__file__).resolve().parents[1] / "packaging"
 APP_ICON = PACKAGING / "icons" / "io.github.ghub_linuxported.svg"
 # A distinct lookup name avoids a stale installed icon in the About dialog.
 APP_ICON_NAME = "io.github.ghub_linuxported.brand"
+HEADER_LOGO = PACKAGING / "icons" / "glp-wordmark.png"
 
 PRODUCT_IMAGES = {
     0x40BD: "pro-x2-superstrike.png",

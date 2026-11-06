@@ -10,7 +10,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gio, GLib, Gtk  # noqa: E402
 
 from ..devices import scan, FoundDevice
-from ..assets import APP_ICON, device_image
+from ..assets import HEADER_LOGO, device_image
 
 SCAN_EVERY_S = 4
 
@@ -80,11 +80,12 @@ class HomePage(Adw.NavigationPage):
 
         tb = Adw.ToolbarView()
         header = Adw.HeaderBar()
-        brand = Gtk.Box(spacing=10)
-        logo = Gtk.Image(gicon=Gio.FileIcon.new(Gio.File.new_for_path(str(APP_ICON))), pixel_size=32)
-        brand.append(logo)
-        brand.append(Gtk.Label(label="G HUB", css_classes=["brand"]))
-        brand.append(Gtk.Label(label="LINUX PORTED", css_classes=["eyebrow"]))
+        logo = Gtk.Picture.new_for_filename(str(HEADER_LOGO))
+        logo.set_content_fit(Gtk.ContentFit.CONTAIN)
+        logo.set_can_shrink(True)
+        logo.set_alternative_text("GLP")
+        brand = Gtk.Overlay(width_request=96, height_request=40, margin_top=4, margin_bottom=4)
+        brand.add_overlay(logo)
         header.set_title_widget(brand)
         menu = Gio.Menu()
         theme = Gio.Menu()
@@ -103,11 +104,6 @@ class HomePage(Adw.NavigationPage):
         scroller = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER)
         col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, margin_top=36, margin_bottom=36,
                       margin_start=24, margin_end=24)
-        col.append(Gtk.Label(label="YOUR GEAR", css_classes=["eyebrow"]))
-        col.append(Gtk.Label(label="Choose a device to customize", css_classes=["home-title"],
-                             wrap=True, justify=Gtk.Justification.CENTER))
-        self.subtitle = Gtk.Label(css_classes=["dim-label"], margin_bottom=24)
-        col.append(self.subtitle)
         self.flow = Adw.WrapBox(child_spacing=24, line_spacing=24, halign=Gtk.Align.CENTER,
                                 justify=Adw.JustifyMode.NONE, align=0.5)
         col.append(self.flow)
@@ -163,8 +159,6 @@ class HomePage(Adw.NavigationPage):
                 self.tiles[d.key] = tile
                 self.flow.append(tile)
         self.devices = {d.key: d for d in devs}
-        awake = sum(d.awake for d in devs)
-        self.subtitle.set_label(f"{len(devs)} device{'s' if len(devs) != 1 else ''} detected · {awake} awake")
         self.stack.set_visible_child_name("grid" if devs else "empty")
         self.shell.devices_changed(devs)
         return False
