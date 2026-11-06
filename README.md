@@ -1,126 +1,97 @@
 <div align="center">
 
-<img src="packaging/icons/io.github.ghub_linuxported.svg" width="176" alt="GLP — white geometric lettering on charcoal">
+<img src="packaging/icons/io.github.ghub_linuxported.svg" width="144" alt="GLP logo">
 
 # G HUB Linux Ported
 
-**Your Logitech gear. One Linux control panel.**<br>
-Discover your devices, check their status and customize supported features.<br>
-Native GTK4. Local and offline. Community-built.
+A Linux app for configuring Logitech mice and keyboards.
 
-![Linux](https://img.shields.io/badge/Linux-GTK4%20%2B%20libadwaita-00a8e8?style=flat-square)
-![Python](https://img.shields.io/badge/Python-3.11%2B-3776ab?style=flat-square)
-![License](https://img.shields.io/badge/license-MIT-2ea44f?style=flat-square)
-
-<img src="docs/screenshots/home.png" width="860" alt="Device picker with top-view photos of the PRO X2 SUPERSTRIKE and G515 LS TKL">
-
-<sub>Actual app UI with simulated devices and battery levels.</sub>
+<img src="docs/screenshots/home.png" width="860" alt="Device picker with mouse and keyboard cards">
 
 </div>
 
-## One place for your setup
+Adjust mouse settings, customize keyboard lighting and check battery levels.
+GLP runs locally, with no account or internet connection required. The interface
+uses GTK4 and libadwaita.
 
-G HUB Linux Ported (GLP) brings Logitech HID++ devices into a shared desktop
-interface. Open the device overview, choose your mouse or keyboard, and find
-the controls available for that device.
+## Controls
 
-- **Device overview** — see detected devices and available battery information.
-- **Mouse controls** — adjust sensitivity, polling, buttons and onboard profiles on supported models.
-- **Keyboard lighting** — choose effects, set brightness and paint individual keys on supported keyboards.
-- **Tray companion** — keep mouse battery, alerts and quick DPI controls close at hand.
-- **Local settings** — apply changes directly, without a cloud account.
+- Mouse sensitivity, polling rate, button assignments and onboard profiles.
+- Keyboard lighting effects, brightness and individual key colors.
+- Color presets, hex color entry and painting for groups of keys.
+- Battery information, notifications and quick controls from the system tray.
 
-## Compatibility
+Available controls depend on the device. Some devices can be detected but do
+not yet have configuration support. See the [support notes](docs/DEVICE-SUPPORT-RESEARCH.md)
+for current coverage and work on additional devices.
 
-Features depend on the model and the HID++ capabilities it exposes. Discovery
-of a device does not mean that all of its settings can be changed. GLP is an
-independent project, not an official Linux edition of Logitech G HUB.
+## Screenshots
 
-See the [device support research](docs/DEVICE-SUPPORT-RESEARCH.md) for candidate
-models, protocol differences and the hardware checks needed to add support.
+Mouse and keyboard settings use the same sidebar navigation.
 
-| Device | Current support |
-|---|---|
-| **PRO X2 SUPERSTRIKE** | HITS actuation, rapid trigger and haptics · DPI stages · polling up to 8 kHz · button remapping · bhop mode · onboard profiles |
-| **G515 LS TKL** | LIGHTSYNC effects (static, breathing, color cycle, wave, ripple) · per-key painting · brightness |
-| **Other Logitech HID++ devices** | Device information, with battery and firmware details where available; configuration support varies |
+<img src="docs/screenshots/keyboard.png" width="860" alt="Keyboard lighting settings with sidebar navigation">
 
-<p align="center">
-  <img src="docs/screenshots/keyboard.png" width="860" alt="Keyboard sidebar with lighting effects and exact color controls">
-</p>
-
-Keyboard controls use the same sidebar as the mouse: **Lighting**, **Key colors**,
-**Brightness** and **Device**. Choose a hex color, paint individual keys or whole
-groups, set the background, and adjust supported effects and intensity.
+<img src="docs/screenshots/keyboard-keys.png" width="860" alt="Key color editor with brush colors, presets and group painting">
 
 <details>
-<summary>Per-key customization and mouse controls</summary>
+<summary>Mouse settings</summary>
 
-<img src="docs/screenshots/keyboard-keys.png" width="860" alt="Per-key editor with background color, key picker, presets and group painting">
-<img src="docs/screenshots/hits.png" width="860" alt="Model-specific HITS controls for the PRO X2 SUPERSTRIKE">
+<img src="docs/screenshots/mouse.png" width="860" alt="Mouse settings and device information">
 
 </details>
 
-## Everyday use
-
-Changes apply as you make them, with an animated preview for keyboard lighting.
-Closing the window keeps the tray helper running; right-click its icon and
-choose **Quit** to exit.
-
-On supported mice, saving to onboard memory creates a backup, checks the CRC
-and verifies the written data byte for byte. Keyboard lighting is re-applied
-after sleep or reconnect, and control returns to the keyboard when you quit.
+Screenshots show the app with simulated devices and battery levels.
+[Run the preview locally](docs/screenshots/README.md).
 
 ## Install
 
+On Arch Linux:
+
 ```sh
-# Arch: sudo pacman -S python-gobject gtk4 libadwaita libdbusmenu-glib
+sudo pacman -S python-gobject gtk4 libadwaita libdbusmenu-glib
 git clone https://github.com/Bettencourtzw/ghub-linuxported.git
 cd ghub-linuxported
 ./install.sh --udev
 ```
 
-Open **G HUB Linux Ported** from your app menu. To start it hidden in the tray at login:
+Open **G HUB Linux Ported** from your app menu. To start it in the tray at login:
 
 ```sh
 systemctl --user enable --now ghub-linuxported-tray.service
 ```
 
-## Local screenshot preview
+Closing the window keeps the app in the tray. Choose **Quit** from the tray menu
+to exit.
 
-The preview uses simulated devices, temporary settings and no hardware access.
-It opens the same GTK interface as the Linux app.
+## Saving settings
 
-```sh
-# macOS preview dependencies (device control still requires Linux):
-brew install gtk4 libadwaita pygobject3 adwaita-icon-theme
-python3 tools/ui_preview.py --interactive --width 1100 --height 700
+Mouse profiles can be saved to onboard memory where supported. GLP backs up
+the previous settings before writing and checks the result afterward.
 
-# Regenerate the README images:
-python3 tools/ui_preview.py docs/screenshots --width 1240 --height 1000
-python3 tools/ui_preview.py docs/screenshots --page home --width 1100 --height 700
-```
+Custom keyboard lighting is saved locally and restored when the keyboard
+reconnects. Keep GLP running to maintain it. Choosing **Onboard**, or quitting
+the app, returns lighting control to the keyboard.
 
-## Command line
-
-The CLI currently focuses on the PRO X2 SUPERSTRIKE mouse:
+## Development
 
 ```sh
-ghub-linuxported-cli status                                # mouse battery, DPI, HITS, bhop
-ghub-linuxported-cli hits --code MDAwNDA1MDMwNTEwMDQwMw==  # apply a HITS code
-ghub-linuxported-cli rate                                  # measure real polling rate
+python3 -m unittest discover -s tests
+python3 tools/ui_preview.py --interactive
 ```
 
-## Credits
+The preview uses temporary settings and does not access hardware.
+[Preview setup and screenshot commands](docs/screenshots/README.md).
 
-Built on the community's reverse-engineering work:
-[xatuke](https://github.com/xatuke/logitech-superstrike-pro-x2-controller),
-[kazehana99k](https://github.com/kazehana99k/Logitech-PRO-X2-SUPERSTRIKE-Linux-haptics-actuation-control-),
-[linux-superstrike](https://github.com/mclol0/linux-superstrike),
-[Solaar](https://github.com/pwr-Solaar/Solaar),
-[OpenRGB](https://gitlab.com/CalcProgrammer1/OpenRGB) and
-[libratbag](https://github.com/libratbag/libratbag).
-Protocol notes: [docs/PROTOCOL.md](docs/PROTOCOL.md).
-Product artwork: [sources and separate rights notice](packaging/devices/SOURCES.md).
+[Protocol documentation](docs/PROTOCOL.md) ·
+[Device support research](docs/DEVICE-SUPPORT-RESEARCH.md) ·
+[Artwork sources](packaging/devices/SOURCES.md)
 
-<sub>Not affiliated with Logitech. "Logitech", "G HUB", "LIGHTSYNC", "PRO X2 SUPERSTRIKE" and "G515" are trademarks of Logitech. MIT licensed.</sub>
+## Credits and license
+
+GLP uses protocol research from the Linux device community. Sources and
+acknowledgments are listed in the [protocol documentation](docs/PROTOCOL.md)
+and [support notes](docs/DEVICE-SUPPORT-RESEARCH.md).
+
+The code is [MIT licensed](LICENSE). Product artwork has separate rights, listed
+in the [artwork sources](packaging/devices/SOURCES.md).
+GLP is an independent project and is not affiliated with Logitech.
