@@ -12,7 +12,9 @@ Native GTK4. Local and offline. Community-built.
 ![Python](https://img.shields.io/badge/Python-3.11%2B-3776ab?style=flat-square)
 ![License](https://img.shields.io/badge/license-MIT-2ea44f?style=flat-square)
 
-<img src="docs/screenshots/home.png" width="860" alt="Device overview">
+<img src="docs/screenshots/home.png" width="860" alt="Device picker with top-view photos of the PRO X2 SUPERSTRIKE and G515 LS TKL">
+
+<sub>Actual app UI with simulated devices and battery levels.</sub>
 
 </div>
 
@@ -44,9 +46,20 @@ models, protocol differences and the hardware checks needed to add support.
 | **Other Logitech HID++ devices** | Device information, with battery and firmware details where available; configuration support varies |
 
 <p align="center">
-  <img src="docs/screenshots/keyboard.png" width="49%" alt="Keyboard lighting controls">
-  <img src="docs/screenshots/hits.png" width="49%" alt="Model-specific HITS controls for the PRO X2 SUPERSTRIKE">
+  <img src="docs/screenshots/keyboard.png" width="860" alt="Keyboard sidebar with lighting effects and exact color controls">
 </p>
+
+Keyboard controls use the same sidebar as the mouse: **Lighting**, **Key colors**,
+**Brightness** and **Device**. Choose a hex color, paint individual keys or whole
+groups, set the background, and adjust supported effects and intensity.
+
+<details>
+<summary>Per-key customization and mouse controls</summary>
+
+<img src="docs/screenshots/keyboard-keys.png" width="860" alt="Per-key editor with background color, key picker, presets and group painting">
+<img src="docs/screenshots/hits.png" width="860" alt="Model-specific HITS controls for the PRO X2 SUPERSTRIKE">
+
+</details>
 
 ## Everyday use
 
@@ -71,6 +84,21 @@ Open **G HUB Linux Ported** from your app menu. To start it hidden in the tray a
 
 ```sh
 systemctl --user enable --now ghub-linuxported-tray.service
+```
+
+## Local screenshot preview
+
+The preview uses simulated devices, temporary settings and no hardware access.
+It opens the same GTK interface as the Linux app.
+
+```sh
+# macOS preview dependencies (device control still requires Linux):
+brew install gtk4 libadwaita pygobject3 adwaita-icon-theme
+python3 tools/ui_preview.py --interactive --width 1100 --height 700
+
+# Regenerate the README images:
+python3 tools/ui_preview.py docs/screenshots --width 1240 --height 1000
+python3 tools/ui_preview.py docs/screenshots --page home --width 1100 --height 700
 ```
 
 ## Command line

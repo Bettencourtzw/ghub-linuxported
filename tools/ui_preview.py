@@ -1,6 +1,7 @@
 """Render every page with a simulated mouse (no hardware) and save PNG screenshots.
 
-    python3 tools/ui_preview.py OUTDIR [--dark]
+    python3 tools/ui_preview.py OUTDIR
+    python3 tools/ui_preview.py --interactive  # leave the device picker open
 """
 import sys
 from pathlib import Path
@@ -62,8 +63,14 @@ def render(win, path):
     w, h = win.get_width(), win.get_height()
     snap = Gtk.Snapshot()
     paintable.snapshot(snap, w, h)
-    tex = win.get_renderer().render_texture(snap.to_node(), None)
-    tex.save_to_png(str(path))
+    node = snap.to_node()
+    if node is None:
+        win.queue_draw()
+        return False
+    tex = win.get_renderer().render_texture(node, None)
+    if not tex.save_to_png(str(path)):
+        raise OSError(f"Could not save {path}")
+    return True
 
 
 def fake_devices():
@@ -116,11 +123,28 @@ def hypr_float(pid, w, h):
 
 
 def main():
-    out = Path(sys.argv[1])
-    out.mkdir(parents=True, exist_ok=True)
+    import argparse
+    import tempfile
+    import types
+    from ghub_linuxported import storage
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("out", nargs="?", default="docs/screenshots")
+    parser.add_argument("--interactive", action="store_true")
+    parser.add_argument("--page", choices=("all", "home", "keyboard"), default="all")
+    parser.add_argument("--width", type=int, default=SIZE[0])
+    parser.add_argument("--height", type=int, default=SIZE[1])
+    args = parser.parse_args()
+    out = Path(args.out)
+    if not args.interactive:
+        out.mkdir(parents=True, exist_ok=True)
+    preview_data = tempfile.TemporaryDirectory(prefix="glp-preview-")
+    storage.CONFIG_DIR = Path(preview_data.name) / "config"
+    storage.CONFIG_FILE = storage.CONFIG_DIR / "config.json"
+    storage.DATA_DIR = Path(preview_data.name) / "data"
+    storage.BACKUP_DIR = storage.DATA_DIR / "backups"
     import ghub_linuxported.ui.home as home
     import ghub_linuxported.ui.mouse_view as mv
-    import ghub_linuxported.tray.main as traymod
     from ghub_linuxported.model.keyboard_layout import TKL_ANSI, WASD, ARROWS
     devs = fake_devices()
     home.scan = lambda previous=None: (devs, False)
@@ -132,23 +156,37 @@ def main():
         def stop(self): pass
         def set_devices(self, d): pass
         def keyboard_battery(self, d): pass
+    traymod = types.ModuleType("ghub_linuxported.tray.main")
     traymod.Tray = NoTray
+    traymod.tray_host_available = lambda: False
+    sys.modules[traymod.__name__] = traymod
     App._restore_keyboards = lambda self: None
     gamer = {str(k.usage): [0, 168, 232] for k in TKL_ANSI}
     gamer.update({str(u): [255, 0, 129] for u in WASD | ARROWS})
-    kb_state = {"mode": "perkey", "keys": gamer}
+    kb_state = {"mode": "static", "keys": gamer}
     App.keyboard_service = lambda self, found: fake_keyboard_service(found, kb_state)
-    App.keyboard_view_closed = lambda self, found: None
+    App.keyboard_view_closed = lambda self, found, mode: None
     app = App()
-    W, H = SIZE
+    app.set_application_id("io.github.ghub_linuxported.Preview")
+    app.connect("startup", lambda _: Gtk.Settings.get_default().set_property("gtk-icon-theme-name", "Adwaita"))
+    W, H = args.width, args.height
+
+    capture_errors = []
 
     def steps():
         win = app.win
         home_dev = {d.kind: d for d in devs}
-        seq = [("home", None), ("keyboard", lambda: win.open_device(home_dev["keyboard"])),
+        seq = [("home", None), ("keyboard", lambda: (win.open_device(home_dev["keyboard"]),
+                                      win.nav.get_visible_page().view.goto("lighting"))),
+               ("keyboard-keys", lambda: win.nav.get_visible_page().view.mode_buttons["perkey"].set_active(True)),
                ("mouse", lambda: (win.nav.pop(), win.open_device(home_dev["mouse"]))),
                ("hits", lambda: win.nav.get_visible_page().view.goto("hits")),
                ("buttons", lambda: win.nav.get_visible_page().view.goto("buttons"))]
+
+        if args.page == "home":
+            seq = seq[:1]
+        elif args.page == "keyboard":
+            seq = seq[1:3]
 
         def run(i=0):
             if i >= len(seq):
@@ -157,7 +195,23 @@ def main():
             name, action = seq[i]
             if action:
                 action()
-            GLib.timeout_add(1600, lambda: (render(win, out / f"{name}.png"), run(i + 1)) and False)
+            attempts = 0
+
+            def capture():
+                nonlocal attempts
+                attempts += 1
+                try:
+                    if render(win, out / f"{name}.png"):
+                        run(i + 1)
+                        return False
+                    if attempts < 5:
+                        return True
+                    raise RuntimeError(f"No rendered frame for {name}")
+                except Exception as exc:
+                    capture_errors.append(exc)
+                    app.really_quit()
+                    return False
+            GLib.timeout_add(1600, capture)
             return False
         run()
         return False
@@ -166,10 +220,16 @@ def main():
         win = app.win
         win.set_default_size(W, H)
         hypr_float(__import__("os").getpid(), W, H)
-        GLib.timeout_add(2200, steps)
+        if not args.interactive:
+            GLib.timeout_add(2200, steps)
         return False
     GLib.timeout_add(1200, setup)
-    app.run([sys.argv[0]])
+    try:
+        app.run([sys.argv[0]])
+    finally:
+        preview_data.cleanup()
+    if capture_errors:
+        raise RuntimeError("Screenshot capture failed") from capture_errors[0]
 
 
 if __name__ == "__main__":

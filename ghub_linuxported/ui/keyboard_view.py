@@ -56,21 +56,59 @@ class KeyboardView(Adw.BreakpointBin):
         self.push_brightness = Debouncer(160)
         self._t0 = time.monotonic()
 
+        self.section = "lighting"
+        self.split = Adw.NavigationSplitView(min_sidebar_width=230)
+        self.set_child(self.split)
+        side = Adw.ToolbarView()
+        side_header = Adw.HeaderBar()
+        side_header.set_title_widget(Adw.WindowTitle(title=found.title, subtitle="Keyboard"))
+        side.add_top_bar(side_header)
+        self.sidebar_list = Gtk.ListBox(css_classes=["navigation-sidebar"])
+        self.sidebar_list.connect("row-activated", lambda _list, row: self.goto(row.page_key))
+        side_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        side_scroll = Gtk.ScrolledWindow(vexpand=True)
+        side_scroll.set_child(self.sidebar_list)
+        side_box.append(side_scroll)
+        self.side_battery = Gtk.Label(xalign=0, wrap=True, css_classes=["dim-label", "caption"],
+                                     margin_start=18, margin_end=18, margin_bottom=12)
+        side_box.append(self.side_battery)
+        side.set_content(side_box)
+        self.split.set_sidebar(Adw.NavigationPage(title=found.title, child=side))
+
         tb = Adw.ToolbarView()
-        header = Adw.HeaderBar()
-        self.views = Adw.ViewStack()
-        switcher = Adw.ViewSwitcher(stack=self.views, policy=Adw.ViewSwitcherPolicy.WIDE)
-        header.set_title_widget(switcher)
+        header = Adw.HeaderBar(show_back_button=False)
+        self.page_title = Adw.WindowTitle(title="Lighting", subtitle="Effects, color and motion")
+        header.set_title_widget(self.page_title)
         self.spinner = Adw.Spinner(visible=False)
         header.pack_end(self.spinner)
         tb.add_top_bar(header)
         self.banner = Adw.Banner()
         tb.add_top_bar(self.banner)
-        tb.set_content(self.views)
-        self.set_child(tb)
-
-        self.views.add_titled_with_icon(self._lighting_page(), "lighting", "LIGHTSYNC", "starred-symbolic")
-        self.views.add_titled_with_icon(self._device_page(), "device", "Device", "input-keyboard-symbolic")
+        self.stack = Gtk.Stack(hhomogeneous=False, vhomogeneous=False)
+        self.stack.add_named(self._lighting_page(), "lighting")
+        self.stack.add_named(self._brightness_page(), "brightness")
+        self.stack.add_named(self._device_page(), "device")
+        tb.set_content(self.stack)
+        self.split.set_content(Adw.NavigationPage(title="Keyboard settings", child=tb))
+        self.nav_pages = {
+            "lighting": ("Lighting", "starred-symbolic", "Effects, color and motion"),
+            "keys": ("Key colors", "input-keyboard-symbolic", "Paint keys and create your own layout"),
+            "brightness": ("Brightness", "display-brightness-symbolic", "Hardware lighting level"),
+            "device": ("Device", "dialog-information-symbolic", "Battery, connection and firmware"),
+        }
+        for key, (title, icon, _subtitle) in self.nav_pages.items():
+            row = Gtk.ListBoxRow()
+            row.page_key = key
+            box = Gtk.Box(spacing=12, margin_top=8, margin_bottom=8, margin_start=6)
+            box.append(Gtk.Image(icon_name=icon))
+            box.append(Gtk.Label(label=title, xalign=0))
+            row.set_child(box)
+            self.sidebar_list.append(row)
+        self.sidebar_list.select_row(self.sidebar_list.get_row_at_index(0))
+        narrow = Adw.Breakpoint.new(Adw.BreakpointCondition.parse("max-width: 720sp"))
+        narrow.add_setter(self.split, "collapsed", True)
+        narrow.add_setter(header, "show-back-button", True)
+        self.add_breakpoint(narrow)
 
         self._subs = [("status", self.service.on("status", self._on_status)),
                       ("info", self.service.on("info", lambda _s: self._fill_info())),
@@ -84,7 +122,7 @@ class KeyboardView(Adw.BreakpointBin):
     # ------------------------------------------------------------ building
     def _lighting_page(self):
         scroller = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER)
-        clamp = Adw.Clamp(maximum_size=1180, margin_top=20, margin_bottom=28, margin_start=16, margin_end=16)
+        clamp = Adw.Clamp(maximum_size=980, margin_top=20, margin_bottom=28, margin_start=16, margin_end=16)
         scroller.set_child(clamp)
         col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=22)
         clamp.set_child(col)
@@ -92,7 +130,6 @@ class KeyboardView(Adw.BreakpointBin):
         hero = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, css_classes=["card", "hero"])
         top = Gtk.Box(margin_top=14, margin_start=20, margin_end=20)
         titles = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, hexpand=True)
-        titles.append(Gtk.Label(label="LIGHTSYNC", css_classes=["eyebrow"], xalign=0))
         self.mode_title = Gtk.Label(css_classes=["title-2"], xalign=0)
         titles.append(self.mode_title)
         top.append(titles)
@@ -100,7 +137,8 @@ class KeyboardView(Adw.BreakpointBin):
                               max_width_chars=40)
         top.append(self.hint)
         hero.append(top)
-        self.kb = KeyboardWidget(interactive=True, min_height=300)
+        self.kb = KeyboardWidget(interactive=True, min_height=230)
+        self.kb.set_size_request(200, 230)
         self.kb.set_margin_start(12)
         self.kb.set_margin_end(12)
         self.kb.set_margin_bottom(12)
@@ -109,7 +147,8 @@ class KeyboardView(Adw.BreakpointBin):
         col.append(hero)
 
         # effects
-        eg = Adw.PreferencesGroup(title="Effect")
+        eg = self.effects_group = Adw.PreferencesGroup(title="Lighting effect",
+            description="Choose how the keyboard lights up. Changes apply immediately.")
         wrap = Adw.WrapBox(child_spacing=10, line_spacing=10)
         self.mode_buttons = {}
         first = None
@@ -146,6 +185,10 @@ class KeyboardView(Adw.BreakpointBin):
         self.color_btn.connect("notify::rgba", self._on_custom_color)
         sw_row.append(self.color_btn)
         self.color_group.add(sw_row)
+        self.hex_color = Adw.EntryRow(title="Hex color", show_apply_button=True)
+        self.hex_color.set_text("#%02X%02X%02X" % self.brush)
+        self.hex_color.connect("apply", lambda *_: self._apply_hex())
+        self.color_group.add(self.hex_color)
         col.append(self.color_group)
 
         # animation
@@ -157,21 +200,30 @@ class KeyboardView(Adw.BreakpointBin):
             self.speed.add_mark(v, Gtk.PositionType.BOTTOM, lab)
         self.speed.connect("value-changed", lambda *_: self._on_speed())
         sr = Adw.ActionRow(title="Speed")
-        sbox = Gtk.Box(width_request=320, hexpand=True)
+        sbox = Gtk.Box(width_request=160, hexpand=True)
         sbox.append(self.speed)
         sr.add_suffix(sbox)
         self.anim_group.add(sr)
         self.direction = Adw.ComboRow(title="Direction", model=Gtk.StringList.new([d[0] for d in DIRECTIONS]))
         self.direction.connect("notify::selected", lambda *_: self._on_direction())
         self.anim_group.add(self.direction)
+        self.intensity = Adw.SpinRow.new_with_range(0, 100, 5)
+        self.intensity.set_title("Effect intensity")
+        self.intensity.set_subtitle("Strength of breathing and color effects (%)")
+        self.intensity.connect("notify::value", lambda *_: self._on_intensity())
+        self.anim_group.add(self.intensity)
         col.append(self.anim_group)
 
         # per-key tools
+        self.enable_keys = Gtk.Button(label="Enable per-key lighting", halign=Gtk.Align.START,
+                                      css_classes=["suggested-action"])
+        self.enable_keys.connect("clicked", lambda *_: self.mode_buttons["perkey"].set_active(True))
+        col.append(self.enable_keys)
         self.perkey_group = Adw.PreferencesGroup(
             title="Per-key painting",
             description="Pick a color above, then click or drag across keys on the keyboard.")
         tools = Adw.WrapBox(child_spacing=8, line_spacing=8)
-        for label, cb in (("Fill all", self._fill_all), ("Clear", self._clear_keys),
+        for label, cb in (("Fill all", self._fill_all), ("Reset to background", self._clear_keys),
                           ("WASD + arrows", lambda: self._preset("wasd")),
                           ("Gamer (cyan + pink)", lambda: self._preset("gamer")),
                           ("Rainbow columns", lambda: self._preset("rainbow")),
@@ -180,9 +232,38 @@ class KeyboardView(Adw.BreakpointBin):
             b.connect("clicked", lambda _b, cb=cb: cb())
             tools.append(b)
         self.perkey_group.add(tools)
+        self.background_btn = Gtk.ColorDialogButton(dialog=Gtk.ColorDialog(with_alpha=False),
+                                                    valign=Gtk.Align.CENTER, tooltip_text="Background color")
+        self.background_btn.connect("notify::rgba", self._on_background)
+        background = Adw.ActionRow(title="Background color", subtitle="Used by keys without a painted color")
+        background.add_suffix(self.background_btn)
+        self.perkey_group.add(background)
+        self.key_pick = Adw.ComboRow(title="Individual key", model=Gtk.StringList.new(
+            [k.label or "Space" for k in TKL_ANSI]))
+        paint_key = Gtk.Button(label="Paint key", valign=Gtk.Align.CENTER)
+        paint_key.connect("clicked", lambda *_: self._on_paint({TKL_ANSI[self.key_pick.get_selected()].usage}))
+        self.key_pick.add_suffix(paint_key)
+        self.perkey_group.add(self.key_pick)
+        groups = Adw.WrapBox(child_spacing=8, line_spacing=8)
+        for label, usages in (("WASD", WASD), ("Arrow keys", ARROWS),
+                              ("Function row", FUNCTION_ROW), ("Number row", NUMBER_ROW)):
+            button = Gtk.Button(label=label)
+            button.connect("clicked", lambda _b, keys=usages: self._on_paint(keys))
+            groups.append(button)
+        self.paint_groups = Adw.PreferencesGroup(title="Paint a group", description="Apply the current brush color to these keys.")
+        self.paint_groups.add(groups)
         col.append(self.perkey_group)
+        col.append(self.paint_groups)
 
-        # brightness
+        note = Gtk.Label(wrap=True, xalign=0, css_classes=["caption", "dim-label"],
+                         label="Custom lighting is applied by this app and kept alive from the tray, also after "
+                               "the keyboard sleeps or reconnects. Choose Onboard to hand lighting back to the "
+                               "keyboard; quitting the app does the same.")
+        col.append(note)
+        return scroller
+
+    def _brightness_page(self):
+        page = Adw.PreferencesPage()
         bg = Adw.PreferencesGroup(title="Brightness",
                                   description="Hardware brightness — the same level as FN + F8 on the keyboard.")
         self.bright = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 100, 1)
@@ -192,18 +273,24 @@ class KeyboardView(Adw.BreakpointBin):
             self.bright.add_mark(v, Gtk.PositionType.BOTTOM, None)
         self.bright.connect("value-changed", lambda *_: self._on_brightness())
         br = Adw.ActionRow(title="Level")
-        bbox = Gtk.Box(width_request=320, hexpand=True)
+        bbox = Gtk.Box(width_request=160, hexpand=True)
         bbox.append(self.bright)
         br.add_suffix(bbox)
         bg.add(br)
-        col.append(bg)
+        page.add(bg)
 
-        note = Gtk.Label(wrap=True, xalign=0, css_classes=["caption", "dim-label"],
-                         label="Custom lighting is applied by this app and kept alive from the tray, also after "
-                               "the keyboard sleeps or reconnects. Choose Onboard to hand lighting back to the "
-                               "keyboard; quitting the app does the same.")
-        col.append(note)
-        return scroller
+        return page
+
+    def goto(self, section):
+        self.section = section
+        title, _icon, subtitle = self.nav_pages[section]
+        self.page_title.set_title(title)
+        self.page_title.set_subtitle(subtitle)
+        self.stack.set_visible_child_name("lighting" if section == "keys" else section)
+        self.sidebar_list.select_row(self.sidebar_list.get_row_at_index(list(self.nav_pages).index(section)))
+        self._sync_visibility()
+        self._update_preview()
+        self.split.set_show_content(True)
 
     def _device_page(self):
         page = Adw.PreferencesPage()
@@ -228,20 +315,31 @@ class KeyboardView(Adw.BreakpointBin):
         if st["brightness"] is not None:
             self.bright.set_value(st["brightness"])
         self.color_btn.set_rgba(_rgb_to_gdk(st["color"]))
+        self.background_btn.set_rgba(_rgb_to_gdk(st["base"]))
+        self.intensity.set_value(st["intensity"])
         self._loading = False
         self._sync_visibility()
 
     def _sync_visibility(self):
         mode = self.state["mode"]
-        self.color_group.set_visible(mode in COLOR_MODES)
-        self.anim_group.set_visible(mode in SPEED_MODES)
+        painting = self.section == "keys"
+        self.effects_group.set_visible(not painting)
+        self.color_group.set_title("Brush color" if painting else "Effect color")
+        self.color_group.set_visible(painting or (mode in COLOR_MODES and mode != "perkey"))
+        self.color_group.set_sensitive(not painting or mode == "perkey")
+        self.anim_group.set_visible(not painting and mode in SPEED_MODES)
+        self.intensity.set_visible(mode in {"breathe", "cycle", "wave"})
+        self.enable_keys.set_visible(painting and mode != "perkey")
+        self.paint_groups.set_visible(painting)
+        self.paint_groups.set_sensitive(mode == "perkey")
         self.direction.set_visible(mode == "wave")
-        self.perkey_group.set_visible(mode == "perkey")
-        self.kb.interactive = mode == "perkey"
-        self.kb.set_cursor_from_name("crosshair" if mode == "perkey" else "default")
+        self.perkey_group.set_visible(painting)
+        self.perkey_group.set_sensitive(mode == "perkey")
+        self.kb.interactive = painting and mode == "perkey"
+        self.kb.set_cursor_from_name("crosshair" if self.kb.interactive else "default")
         label, tip = next((m[1], m[3]) for m in MODES if m[0] == mode)
         self.mode_title.set_label(label)
-        self.hint.set_label(tip)
+        self.hint.set_label("Click or drag to paint keys" if painting and mode == "perkey" else tip)
         for b in self.swatch_buttons:
             (b.add_css_class if tuple(b.rgb) == tuple(self.brush) else b.remove_css_class)("selected")
 
@@ -269,9 +367,13 @@ class KeyboardView(Adw.BreakpointBin):
             self.state["mode"] = mode
             return
         self.state["mode"] = mode
+        if mode in COLOR_MODES and mode != "perkey":
+            self.state["color"] = list(self.brush)
         if mode == "perkey" and not self.state["keys"]:
             self._preset("gamer", send=False)
         self._sync_visibility()
+        if mode == "perkey":
+            self.goto("keys")
         self._send()
 
     def _set_color(self, rgb):
@@ -281,8 +383,34 @@ class KeyboardView(Adw.BreakpointBin):
             self._changed()
         self._loading = True
         self.color_btn.set_rgba(_rgb_to_gdk(rgb))
+        self.hex_color.set_text("#%02X%02X%02X" % tuple(rgb))
+        self.hex_color.remove_css_class("error")
         self._loading = False
         self._sync_visibility()
+
+    def _apply_hex(self):
+        value = self.hex_color.get_text().strip().removeprefix("#")
+        try:
+            if len(value) != 6:
+                raise ValueError
+            rgb = tuple(int(value[i:i + 2], 16) for i in (0, 2, 4))
+        except ValueError:
+            self.hex_color.add_css_class("error")
+            self.shell.toast("Enter six hexadecimal digits, for example #00A8E8")
+            return
+        self._set_color(rgb)
+
+    def _on_background(self, button, _p):
+        if self._loading or self.state["mode"] != "perkey":
+            return
+        color = button.get_rgba()
+        self.state["base"] = [round(channel * 255) for channel in (color.red, color.green, color.blue)]
+        self._changed()
+
+    def _on_intensity(self):
+        if not self._loading:
+            self.state["intensity"] = int(self.intensity.get_value())
+            self._changed()
 
     def _on_custom_color(self, btn, _p):
         if self._loading:
@@ -296,11 +424,15 @@ class KeyboardView(Adw.BreakpointBin):
         return max(1, min(10, round(11 - period / 1000)))
 
     def _on_speed(self):
+        if self._loading:
+            return
         v = int(self.speed.get_value())
         self.state["period"] = int((11 - v) * 1000) if self.state["mode"] != "ripple" else int((11 - v) * 500)
         self._changed()
 
     def _on_direction(self):
+        if self._loading:
+            return
         self.state["direction"] = DIRECTIONS[self.direction.get_selected()][1]
         self._changed()
 
@@ -401,6 +533,9 @@ class KeyboardView(Adw.BreakpointBin):
                 colors[k.usage] = tuple(int(c * f) for c in rgb)
         else:
             colors = self._perkey_colors()
+        if mode in {"breathe", "cycle", "wave"}:
+            strength = st["intensity"] / 100
+            colors = {key: tuple(round(c * strength) for c in color) for key, color in colors.items()}
         self.kb.set_colors(colors)
         return True
 
@@ -416,6 +551,7 @@ class KeyboardView(Adw.BreakpointBin):
         ident = s.identity
         if not ident:
             return
+        self.side_battery.set_label(f"{s.battery.percent}% · {s.battery.label}" if s.battery else "Battery unavailable")
         self.dev_rows["name"].set_subtitle(ident.name)
         b = s.battery
         self.dev_rows["battery"].set_subtitle(f"{b.percent}% · {b.label}" if b else "—")

@@ -70,7 +70,7 @@ class KeyboardWidget(Gtk.Widget):
 
     def _paint_at(self, x, y):
         usage = self._hit(x, y)
-        if usage is not None and self.on_paint:
+        if self.interactive and usage is not None and self.on_paint:
             self.on_paint({usage})
 
     def _begin(self, _g, x, y):

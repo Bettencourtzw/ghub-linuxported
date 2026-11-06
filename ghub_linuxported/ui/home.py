@@ -97,14 +97,15 @@ class HomePage(Adw.NavigationPage):
         header.pack_end(Gtk.MenuButton(icon_name="open-menu-symbolic", menu_model=menu, tooltip_text="Menu"))
         tb.add_top_bar(header)
 
-        self.stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE)
+        self.stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE, hhomogeneous=False, vhomogeneous=False)
         tb.set_content(self.stack)
 
         scroller = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER)
         col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, margin_top=36, margin_bottom=36,
                       margin_start=24, margin_end=24)
         col.append(Gtk.Label(label="YOUR GEAR", css_classes=["eyebrow"]))
-        col.append(Gtk.Label(label="Choose a device to customize", css_classes=["home-title"]))
+        col.append(Gtk.Label(label="Choose a device to customize", css_classes=["home-title"],
+                             wrap=True, justify=Gtk.Justification.CENTER))
         self.subtitle = Gtk.Label(css_classes=["dim-label"], margin_bottom=24)
         col.append(self.subtitle)
         self.flow = Adw.WrapBox(child_spacing=24, line_spacing=24, halign=Gtk.Align.CENTER,

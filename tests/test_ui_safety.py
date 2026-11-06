@@ -142,3 +142,58 @@ class ReboundBatteryTests(unittest.TestCase):
         battery = Battery(50, 0, False)
         svc._emit('battery', battery)
         app._keyboard_battery.assert_called_once_with(replacement, battery)
+
+
+class KeyboardCustomizationTests(unittest.TestCase):
+    def test_hex_color_applies_exact_rgb(self):
+        view = SimpleNamespace(hex_color=Mock(), _set_color=Mock(), shell=Mock())
+        view.hex_color.get_text.return_value = '#12aBcD'
+        handler('keyboard_view.py', 'KeyboardView', '_apply_hex')(view)
+        view._set_color.assert_called_once_with((18, 171, 205))
+
+    def test_invalid_hex_does_not_change_lighting(self):
+        for text in ('xyzxyz', '#fff', '#1234567'):
+            view = SimpleNamespace(hex_color=Mock(), _set_color=Mock(), shell=Mock())
+            view.hex_color.get_text.return_value = text
+            handler('keyboard_view.py', 'KeyboardView', '_apply_hex')(view)
+            view._set_color.assert_not_called()
+            view.shell.toast.assert_called_once()
+
+    def test_group_paint_preserves_other_key_colors(self):
+        view = SimpleNamespace(state={'mode': 'perkey', 'keys': {'99': [1, 2, 3]}},
+                               brush=(10, 20, 30), kb=Mock(), _perkey_colors=Mock(return_value={}), _changed=Mock())
+        handler('keyboard_view.py', 'KeyboardView', '_on_paint')(view, {4, 5})
+        self.assertEqual(view.state['keys'], {'99': [1, 2, 3], '4': [10, 20, 30], '5': [10, 20, 30]})
+        view._changed.assert_called_once()
+
+    def test_effect_intensity_does_not_write_during_initial_load(self):
+        view = SimpleNamespace(_loading=True, state={'intensity': 50}, intensity=Mock(), _changed=Mock())
+        handler('keyboard_view.py', 'KeyboardView', '_on_intensity')(view)
+        self.assertEqual(view.state['intensity'], 50)
+        view._changed.assert_not_called()
+        view._loading = False
+        view.intensity.get_value.return_value = 75
+        handler('keyboard_view.py', 'KeyboardView', '_on_intensity')(view)
+        self.assertEqual(view.state['intensity'], 75)
+
+    def test_effect_preview_cannot_paint_keys(self):
+        widget = SimpleNamespace(interactive=False, _hit=Mock(return_value=4), on_paint=Mock())
+        handler('keyboard_widget.py', 'KeyboardWidget', '_paint_at')(widget, 10, 20)
+        widget.on_paint.assert_not_called()
+
+
+class KeyboardEffectConsistencyTests(unittest.TestCase):
+    def test_switching_from_brush_to_static_uses_the_displayed_color(self):
+        view = SimpleNamespace(_loading=False, state={'mode': 'perkey', 'color': [0, 168, 232]},
+                               brush=(255, 200, 0), _sync_visibility=Mock(), _send=Mock())
+        handler('keyboard_view.py', 'KeyboardView', '_set_mode', COLOR_MODES={'static', 'breathe', 'ripple', 'perkey'})(view, 'static')
+        self.assertEqual(view.state['color'], [255, 200, 0])
+        view._send.assert_called_once()
+
+    def test_zero_effect_intensity_renders_dark_preview(self):
+        view = SimpleNamespace(state={'mode': 'cycle', 'color': [0, 168, 232], 'period': 1000, 'intensity': 0},
+                               _t0=0, kb=Mock(), get_mapped=lambda: True)
+        handler('keyboard_view.py', 'KeyboardView', '_animate',
+                time=SimpleNamespace(monotonic=lambda: 0), TKL_ANSI=[SimpleNamespace(usage=4)],
+                _hsv=lambda _: (255, 100, 50))(view)
+        view.kb.set_colors.assert_called_once_with({4: (0, 0, 0)})
