@@ -4,7 +4,7 @@ import copy
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[1] / 'ghub_linuxported/ui'
 
@@ -121,3 +121,24 @@ class PreviewFixtureTests(unittest.TestCase):
         self.assertEqual((keyboard.kind, keyboard.model, keyboard.battery.percent), ('keyboard', 'keyboard', 64))
         self.assertTrue(mouse.awake)
         self.assertTrue(keyboard.awake)
+
+
+class ReboundBatteryTests(unittest.TestCase):
+    def test_battery_event_uses_current_device_after_path_change(self):
+        from ghub_linuxported.devices import FoundDevice
+        from ghub_linuxported.hidpp.mouse import Battery, Identity
+        from ghub_linuxported.keyboard_service import DEFAULT_STATE
+        found = FoundDevice('/dev/old', 0x40b4, 'G515', unit_id='known')
+        app = SimpleNamespace(keyboards={}, _keyboard_battery=Mock())
+        get_service = handler('app.py', 'App', 'keyboard_service',
+                              GLib=SimpleNamespace(idle_add=lambda fn: fn()),
+                              __name__='ghub_linuxported.ui.app', __package__='ghub_linuxported.ui')
+        with patch('ghub_linuxported.keyboard_service.load_state', return_value=copy.deepcopy(DEFAULT_STATE)), \
+             patch('ghub_linuxported.keyboard_service.KeyboardService.start'):
+            svc = get_service(app, found)
+        svc.identity = Identity(unit_id='known')
+        replacement = FoundDevice('/dev/new', 0x40b4, 'G515', unit_id='known')
+        self.assertIs(get_service(app, replacement), svc)
+        battery = Battery(50, 0, False)
+        svc._emit('battery', battery)
+        app._keyboard_battery.assert_called_once_with(replacement, battery)

@@ -126,7 +126,7 @@ class App(Adw.Application):
         if svc is None:
             from ..keyboard_service import KeyboardService
             svc = KeyboardService(lambda fn, *a: GLib.idle_add(lambda: fn(*a) and False), found)
-            svc.on("battery", lambda b, f=found: self._keyboard_battery(f, b))
+            svc.on("battery", lambda b, s=svc: self._keyboard_battery(s.found, b))
             self.keyboards[found.key] = svc
             svc.start()
         return svc
