@@ -1,11 +1,12 @@
 <div align="center">
 
-<img src="packaging/icons/io.github.ghub_linuxported.svg" width="104" alt="">
+<img src="packaging/icons/io.github.ghub_linuxported.svg" width="176" alt="GLP — white geometric lettering on charcoal">
 
 # G HUB Linux Ported
 
-**A G HUB-style control panel for Logitech G gear on Linux.**<br>
-Mice, keyboards, lighting and more. Native, local and offline.
+**Your Logitech gear. One Linux control panel.**<br>
+Discover your devices, check their status and customize supported features.<br>
+Native GTK4. Local and offline. Community-built.
 
 ![Linux](https://img.shields.io/badge/Linux-GTK4%20%2B%20libadwaita-00a8e8?style=flat-square)
 ![Python](https://img.shields.io/badge/Python-3.11%2B-3776ab?style=flat-square)
@@ -15,28 +16,44 @@ Mice, keyboards, lighting and more. Native, local and offline.
 
 </div>
 
-## Devices
+## One place for your setup
 
-| Device | What you can customize |
+G HUB Linux Ported (GLP) brings Logitech HID++ devices into a shared desktop
+interface. Open the device overview, choose your mouse or keyboard, and find
+the controls available for that device.
+
+- **Device overview** — see detected devices and available battery information.
+- **Mouse controls** — adjust sensitivity, polling, buttons and onboard profiles on supported models.
+- **Keyboard lighting** — choose effects, set brightness and paint individual keys on supported keyboards.
+- **Tray companion** — keep mouse battery, alerts and quick DPI controls close at hand.
+- **Local settings** — apply changes directly, without a cloud account.
+
+## Compatibility
+
+Features depend on the model and the HID++ capabilities it exposes. Discovery
+of a device does not mean that all of its settings can be changed. GLP is an
+independent project, not an official Linux edition of Logitech G HUB.
+
+| Device | Current support |
 |---|---|
 | **PRO X2 SUPERSTRIKE** | HITS actuation, rapid trigger and haptics · DPI stages · polling up to 8 kHz · button remapping · bhop mode · onboard profiles |
 | **G515 LS TKL** | LIGHTSYNC effects (static, breathing, color cycle, wave, ripple) · per-key painting · brightness |
-| **Other Logitech HID++ devices** | Battery, firmware and feature info |
-
-Every connected device shows up on the start screen. Click one to open its settings.
+| **Other Logitech HID++ devices** | Device information, with battery and firmware details where available; configuration support varies |
 
 <p align="center">
-  <img src="docs/screenshots/keyboard.png" width="49%" alt="Keyboard lighting">
-  <img src="docs/screenshots/hits.png" width="49%" alt="HITS switches">
+  <img src="docs/screenshots/keyboard.png" width="49%" alt="Keyboard lighting controls">
+  <img src="docs/screenshots/hits.png" width="49%" alt="Model-specific HITS controls for the PRO X2 SUPERSTRIKE">
 </p>
 
-## Highlights
+## Everyday use
 
-- **Instant feedback**: changes apply as you make them, with a live animated lighting preview
-- **Lives in your tray**: closing the window keeps it running with battery, alerts and quick DPI. Right-click the icon and choose Quit to exit
-- **Safe saving**: mouse settings are written to onboard memory with a backup, a CRC check and byte-for-byte verification
-- **Keyboard lighting kept alive**: it is re-applied after sleep or reconnect, and handed back to the keyboard when you quit
-- **G HUB look**: dark theme with Logitech G cyan, or follow your system theme
+Changes apply as you make them, with an animated preview for keyboard lighting.
+Closing the window keeps the tray helper running; right-click its icon and
+choose **Quit** to exit.
+
+On supported mice, saving to onboard memory creates a backup, checks the CRC
+and verifies the written data byte for byte. Keyboard lighting is re-applied
+after sleep or reconnect, and control returns to the keyboard when you quit.
 
 ## Install
 
@@ -53,7 +70,9 @@ Open **G HUB Linux Ported** from your app menu. To start it hidden in the tray a
 systemctl --user enable --now ghub-linuxported-tray.service
 ```
 
-## CLI
+## Command line
+
+The CLI currently focuses on the PRO X2 SUPERSTRIKE mouse:
 
 ```sh
 ghub-linuxported-cli status                                # mouse battery, DPI, HITS, bhop
