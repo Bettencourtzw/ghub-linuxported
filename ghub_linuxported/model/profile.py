@@ -7,6 +7,7 @@ docs/PROTOCOL.md for the field map and sources.
 """
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass, field
 
 from ..hidpp.mouse import HitsButton, RATE_HZ
@@ -122,13 +123,44 @@ class Profile:
         return self.name
 
     def validate(self):
+        def integer(value, low, high, label):
+            if type(value) is not int or not low <= value <= high:
+                raise ValueError(f"{label} must be an integer in {low}..{high}")
+
+        for label, values, count in (("stages", self.stages, STAGE_COUNT),
+                                     ("hits", self.hits, 2),
+                                     ("buttons", self.buttons, BUTTON_COUNT),
+                                     ("shift_buttons", self.shift_buttons, BUTTON_COUNT)):
+            if len(values) != count:
+                raise ValueError(f"{label} must contain exactly {count} entries")
+        integer(self.default_stage, 0, STAGE_COUNT - 1, "default stage")
+        integer(self.shift_stage, 0, STAGE_COUNT - 1, "shift stage")
+        for rate in (self.rate_wireless_hz, self.rate_wired_hz):
+            if type(rate) is not int or rate not in RATE_HZ:
+                raise ValueError("unsupported report rate")
+        for stage in self.stages:
+            integer(stage.x, 100, 44000, "X DPI")
+            integer(stage.y, 100, 44000, "Y DPI")
+            integer(stage.lod, 0, 3, "lift-off distance")
+        for hits in self.hits:
+            integer(hits.actuation, 1, 10, "actuation")
+            integer(hits.rt_level, 1, 5, "rapid trigger")
+            integer(hits.haptics, 0, 5, "haptics")
+            if type(hits.rt_enabled) is not bool:
+                raise ValueError("rapid trigger enabled must be boolean")
+        integer(self.power_save_s, 0, 65535, "power save timer")
+        integer(self.power_off_s, 0, 65535, "power off timer")
+        integer(self.bhop_ms, 0, 1000, "bhop window")
+        if self.bhop_ms % 10:
+            raise ValueError("bhop window must use 10 ms steps")
+        if type(self.angle_snapping) is not bool:
+            raise ValueError("angle snapping must be boolean")
+        if not isinstance(self.name, str) or "\x00" in self.name:
+            raise ValueError("profile name must be text without null characters")
         if not any(s.enabled for s in self.stages):
             raise ValueError("at least one DPI stage must be enabled")
         if not self.stages[self.default_stage].enabled:
             raise ValueError("the default DPI stage must be enabled")
-        for s in self.stages:
-            if not (100 <= s.x <= 44000 and 100 <= s.y <= 44000):
-                raise ValueError(f"DPI {s.x}x{s.y} out of range 100..44000")
         if self.bhop_ms and not 100 <= self.bhop_ms <= 1000:
             raise ValueError("bhop window must be off or 100..1000 ms")
         if len(self.name.encode("utf-16-le")) > NAME_BYTES - 2:
@@ -180,24 +212,39 @@ class Profile:
 
     def apply_json(self, d: dict):
         """Load settings from an exported profile (keeps this sector's raw base)."""
-        self.name = d.get("name", self.name)
-        self.rate_wireless_hz = d.get("rate_wireless_hz", self.rate_wireless_hz)
-        self.rate_wired_hz = d.get("rate_wired_hz", self.rate_wired_hz)
-        self.default_stage = d.get("default_stage", self.default_stage)
-        self.shift_stage = d.get("shift_stage", self.shift_stage)
-        if "stages" in d:
-            self.stages = [DpiStage(s["x"], s["y"], s["lod"]) for s in d["stages"]][:STAGE_COUNT]
-        self.angle_snapping = d.get("angle_snapping", self.angle_snapping)
-        self.bhop_ms = d.get("bhop_ms", self.bhop_ms)
-        if "hits" in d:
-            self.hits = [HitsButton(**h) for h in d["hits"]][:2]
-        self.power_save_s = d.get("power_save_s", self.power_save_s)
-        self.power_off_s = d.get("power_off_s", self.power_off_s)
-        if "buttons" in d:
-            self.buttons = [ButtonAction.decode(bytes.fromhex(h)) for h in d["buttons"]][:BUTTON_COUNT]
-        if "shift_buttons" in d:
-            self.shift_buttons = [ButtonAction.decode(bytes.fromhex(h)) for h in d["shift_buttons"]][:BUTTON_COUNT]
-        self.validate()
+        if not isinstance(d, dict):
+            raise ValueError("profile must be a JSON object")
+
+        def decode_button(value):
+            raw = bytes.fromhex(value)
+            if len(raw) != 4:
+                raise ValueError("button actions must contain exactly four bytes")
+            return ButtonAction.decode(raw)
+
+        candidate = copy.deepcopy(self)
+        try:
+            candidate.name = d.get("name", candidate.name)
+            candidate.rate_wireless_hz = d.get("rate_wireless_hz", candidate.rate_wireless_hz)
+            candidate.rate_wired_hz = d.get("rate_wired_hz", candidate.rate_wired_hz)
+            candidate.default_stage = d.get("default_stage", candidate.default_stage)
+            candidate.shift_stage = d.get("shift_stage", candidate.shift_stage)
+            if "stages" in d:
+                candidate.stages = [DpiStage(s["x"], s["y"], s["lod"]) for s in d["stages"]]
+            candidate.angle_snapping = d.get("angle_snapping", candidate.angle_snapping)
+            candidate.bhop_ms = d.get("bhop_ms", candidate.bhop_ms)
+            if "hits" in d:
+                candidate.hits = [HitsButton(**h) for h in d["hits"]]
+            candidate.power_save_s = d.get("power_save_s", candidate.power_save_s)
+            candidate.power_off_s = d.get("power_off_s", candidate.power_off_s)
+            if "buttons" in d:
+                candidate.buttons = [decode_button(h) for h in d["buttons"]]
+            if "shift_buttons" in d:
+                candidate.shift_buttons = [decode_button(h) for h in d["shift_buttons"]]
+            candidate.validate()
+        except (TypeError, KeyError, IndexError, AttributeError, OverflowError) as exc:
+            raise ValueError(f"Invalid profile: {exc}") from exc
+        self.__dict__.update(candidate.__dict__)
+
 
 
 @dataclass

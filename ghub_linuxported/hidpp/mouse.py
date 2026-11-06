@@ -168,12 +168,14 @@ class Mouse:
 
     # ---------- discovery ----------
     @classmethod
-    def open(cls, swid: int = SWID_GUI, node: str | None = None, dev_index: int | None = None) -> "Mouse":
+    def open(cls, swid: int = SWID_GUI, node: str | None = None, dev_index: int | None = None,
+             expected_pid: int | None = None, expected_unit: str | None = None) -> "Mouse":
         """Find the Superstrike (or open the given hidraw node). Raises PermissionError if
         nodes exist but are not accessible, FileNotFoundError if no candidate answers."""
         nodes = list_logitech_nodes()
         if node:
-            ordered = [n for n in nodes if n.path == node]
+            ordered = [n for n in nodes if n.path == node and
+                       (expected_pid is None or n.product == expected_pid)]
         else:
             ordered = ([n for n in nodes if n.product == PID_WIRED] +
                        [n for n in nodes if n.product == PID_WIRELESS] +
@@ -206,6 +208,14 @@ class Mouse:
                         continue
                 except (HidppTimeout, HidppError):
                     pass
+                if expected_unit is not None:
+                    try:
+                        if not expected_unit or m.identity().unit_id != expected_unit:
+                            t.close()
+                            continue
+                    except Exception:
+                        t.close()
+                        raise
                 return m
         if perm_denied:
             raise PermissionError("Logitech hidraw nodes are not accessible (udev rule missing?)")

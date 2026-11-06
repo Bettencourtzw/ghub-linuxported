@@ -192,8 +192,10 @@ class DeviceService(DeviceWorker):
             raise SaveError("refusing to write a sector with a bad CRC")
         try:
             current = m.read_sector(sector)
-        except HidppError:
-            current = b""
+        except HidppError as exc:
+            raise SaveError("Cannot read the current settings; nothing was written") from exc
+        if len(current) != size:
+            raise SaveError("Cannot back up an incomplete sector; nothing was written")
         if current == data:
             return ""
         unit = self.snapshot.identity.unit_id if self.snapshot.identity else ""

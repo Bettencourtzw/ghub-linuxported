@@ -1,6 +1,9 @@
 """App config (~/.config/ghub-linuxported) and sector backups (~/.local/share/...)."""
 from __future__ import annotations
 
+import fcntl
+import tempfile
+import threading
 import json
 import os
 import time
@@ -40,11 +43,35 @@ def load_config() -> dict:
     return cfg
 
 
-def save_config(cfg: dict):
+_config_lock = threading.Lock()
+
+
+def update_config(changes: dict):
+    """Merge only owned fields under a process and thread lock."""
+    def merge(target, patch):
+        for key, value in patch.items():
+            if isinstance(value, dict) and isinstance(target.get(key), dict):
+                target[key].update(value)
+            else:
+                target[key] = value
+
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    tmp = CONFIG_FILE.with_suffix(".tmp")
-    tmp.write_text(json.dumps(cfg, indent=2))
-    tmp.replace(CONFIG_FILE)
+    with _config_lock, CONFIG_FILE.with_suffix(".lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        cfg = load_config()
+        merge(cfg, changes)
+        tmp = None
+        try:
+            with tempfile.NamedTemporaryFile(mode="w", dir=CONFIG_DIR, delete=False) as f:
+                tmp = Path(f.name)
+                json.dump(cfg, f, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+            tmp.replace(CONFIG_FILE)
+        finally:
+            if tmp is not None:
+                tmp.unlink(missing_ok=True)
+        return cfg
 
 
 def backup_sector(unit_id: str, sector: int, raw: bytes, reason: str) -> Path:

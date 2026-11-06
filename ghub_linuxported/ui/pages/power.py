@@ -60,7 +60,7 @@ class PowerPage(Page):
 
     def _cfg(self, key, value):
         self.win.config[key] = value
-        storage.save_config(self.win.config)
+        storage.update_config({key: value})
 
     def _timers(self):
         e = self.win.edit

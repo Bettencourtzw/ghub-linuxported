@@ -64,7 +64,8 @@ class ProfilesPage(Page):
                 "hits": [vars(h) for h in snap.live_hits], "bhop_ms": snap.bhop_ms or 0,
                 "rate_hz": p.rate_wired_hz if snap.wired else p.rate_wireless_hz,
                 "dpi": [st.x, st.y, st.lod or 2]})
-            storage.save_config(self.win.config)
+            storage.update_config({"live": {key: self.win.config["live"][key]
+                                                   for key in ("hits", "bhop_ms", "rate_hz", "dpi")}})
 
         def job(s):
             s.set_mode(mode)
@@ -221,9 +222,11 @@ class ProfilesPage(Page):
                 return
             try:
                 data = json.loads(Path(f.get_path()).read_text())
+                if not isinstance(data, dict):
+                    raise ValueError("profile must be a JSON object")
                 prof = data.get("profile", data)
                 self.win.edit.apply_json(prof)
-            except (ValueError, KeyError, TypeError) as exc:
+            except (ValueError, KeyError, TypeError, OSError) as exc:
                 self.win.toast(f"Not a valid profile file: {exc}")
                 return
             self.win.reload_pages()

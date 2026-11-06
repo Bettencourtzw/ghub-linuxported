@@ -96,7 +96,7 @@ class App(Adw.Application):
                 if view:
                     view.close()
         for svc in self.keyboards.values():
-            svc.stop(wait=2.0)  # gives lighting control back to the keyboard
+            svc.stop()  # gives lighting control back to the keyboard
         if self.tray:
             self.tray.stop()
         if self._held:
@@ -150,9 +150,7 @@ class App(Adw.Application):
 
     # ---------- misc
     def _set_theme(self, name):
-        cfg = storage.load_config()
-        cfg["theme"] = name
-        storage.save_config(cfg)
+        storage.update_config({"theme": name})
         theme.apply(name)
         if self.win:
             self.win.queue_draw()

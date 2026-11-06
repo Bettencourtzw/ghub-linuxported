@@ -26,7 +26,8 @@ class DeviceWorker:
         self._jobs: queue.Queue = queue.Queue()
         self._listeners: dict[str, list] = {}
         self._stop = threading.Event()
-        self._thread = threading.Thread(target=self._run, name=f"ghub-{self.noun}", daemon=True)
+        self._queue_lock = threading.Lock()
+        self._thread = threading.Thread(target=self._run, name=f"ghub-{self.noun}", daemon=False)
 
     # ---------- to override ----------
     def open_device(self):
@@ -59,15 +60,22 @@ class DeviceWorker:
     def start(self):
         self._thread.start()
 
-    def stop(self, wait: float = 0.0):
-        self._stop.set()
-        self._jobs.put(None)
-        if wait and self._thread.is_alive():
+    def stop(self, wait: float | None = None):
+        with self._queue_lock:
+            if not self._stop.is_set():
+                self._stop.set()
+                self._jobs.put(None)
+        if wait != 0 and self._thread.is_alive() and threading.current_thread() is not self._thread:
             self._thread.join(wait)
 
     def submit(self, fn, on_done=None, on_error=None):
         """Run fn(worker) on the device thread."""
-        self._jobs.put((fn, on_done, on_error))
+        with self._queue_lock:
+            closing = self._stop.is_set()
+            if not closing:
+                self._jobs.put((fn, on_done, on_error))
+        if closing and on_error:
+            self.dispatch(on_error, ConnectionError("The device is closing"))
 
     # ---------- loop ----------
     def _set_status(self, status: str, detail: str = ""):
@@ -76,43 +84,47 @@ class DeviceWorker:
             self._emit("status", status, detail)
 
     def _run(self):
-        next_poll = 0.0
-        while not self._stop.is_set():
-            if self.dev is None:
-                self._try_connect()
+        try:
+            next_poll = 0.0
+            while True:
                 if self.dev is None:
-                    self._drain_jobs_disconnected(timeout=2.0)
+                    if not self._stop.is_set():
+                        self._try_connect()
+                    if self.dev is None:
+                        if self._drain_jobs_disconnected(timeout=2.0):
+                            break
+                        continue
+                    next_poll = time.monotonic() + self.poll_s
+                try:
+                    job = self._jobs.get(timeout=max(0.1, next_poll - time.monotonic()))
+                except queue.Empty:
+                    job = "poll"
+                if job is None:
+                    break
+                if job == "poll":
+                    next_poll = time.monotonic() + self.poll_s
+                    self._safe(self.poll)
                     continue
-                next_poll = time.monotonic() + self.poll_s
-            try:
-                job = self._jobs.get(timeout=max(0.1, next_poll - time.monotonic()))
-            except queue.Empty:
-                job = "poll"
-            if job is None:
-                break
-            if job == "poll":
-                next_poll = time.monotonic() + self.poll_s
-                self._safe(self.poll)
-                continue
-            fn, on_done, on_error = job
-            try:
-                result = fn(self)
-                if on_done:
-                    self.dispatch(on_done, result)
-            except (HidppTimeout, DeviceGone) as exc:
-                self._lost(exc)
-                if on_error:
-                    self.dispatch(on_error, exc)
-            except Exception as exc:  # report every failure to the UI
-                traceback.print_exc()
-                if on_error:
-                    self.dispatch(on_error, exc)
-        if self.dev:
-            try:
-                self.on_stop()
-            except Exception:  # noqa: BLE001 - best effort on shutdown
-                traceback.print_exc()
-            self.dev.close()
+                fn, on_done, on_error = job
+                try:
+                    result = fn(self)
+                    if on_done:
+                        self.dispatch(on_done, result)
+                except (HidppTimeout, DeviceGone) as exc:
+                    self._lost(exc)
+                    if on_error:
+                        self.dispatch(on_error, exc)
+                except Exception as exc:  # report every failure to the UI
+                    traceback.print_exc()
+                    if on_error:
+                        self.dispatch(on_error, exc)
+        finally:
+            if self.dev:
+                try:
+                    self.on_stop()
+                except Exception:  # noqa: BLE001 - best effort on shutdown
+                    traceback.print_exc()
+                self.dev.close()
 
     def _drain_jobs_disconnected(self, timeout: float):
         try:
@@ -120,8 +132,7 @@ class DeviceWorker:
         except queue.Empty:
             return
         if job is None:
-            self._stop.set()
-            return
+            return True
         if job == "poll":
             return
         _fn, _done, on_error = job
@@ -137,8 +148,12 @@ class DeviceWorker:
             traceback.print_exc()
 
     def _lost(self, exc):
-        if self.dev and isinstance(exc, HidppTimeout) and self.dev.ping():
-            return  # transient timeout, link still fine
+        if self.dev and isinstance(exc, HidppTimeout):
+            try:
+                if self.dev.ping():
+                    return  # transient timeout, link still fine
+            except (DeviceGone, HidppError, OSError):
+                pass
         if self.dev:
             self.dev.close()
         self.dev = None
@@ -150,7 +165,7 @@ class DeviceWorker:
         except PermissionError as exc:
             self._set_status("permission", str(exc))
             return
-        except (FileNotFoundError, OSError) as exc:
+        except Exception as exc:
             if self.status != "asleep":
                 self._set_status("searching", str(exc))
             return
@@ -160,7 +175,7 @@ class DeviceWorker:
         try:
             self.refresh()
             self._set_status("connected", getattr(d, "connection", ""))
-        except (HidppTimeout, DeviceGone, HidppError) as exc:
+        except Exception as exc:
             traceback.print_exc()
             d.close()
             self.dev = None

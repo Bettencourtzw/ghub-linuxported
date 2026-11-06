@@ -161,7 +161,7 @@ class SensorPage(Page):
         if self.loading:
             return
         self.win.config.setdefault("live", {})["surface"] = i
-        storage.save_config(self.win.config)
+        storage.update_config({"live": {"surface": i}})
         self.win.run(lambda s: s.apply_surface(i), lambda _r: self.win.toast(f"Surface mode: {SURFACE_MODES[i]}"))
 
     def _on_angle(self, row, _p):

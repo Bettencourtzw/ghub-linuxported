@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import copy
-import subprocess
 from pathlib import Path
 
 import gi
@@ -161,7 +160,7 @@ class MouseView(Adw.BreakpointBin):
     def close(self):
         """Called when the view is popped: drop unsaved live tweaks and stop the worker."""
         if self.is_dirty() and self.editing_active and self.service.status == "connected":
-            self.live_restore_from(self.snapshot.profiles.get(self.editing_sector))
+            self.live_restore_from(self.snapshot.profiles.get(self.editing_sector), latest=True)
         self.service.stop()
 
     # ------------------------------------------------------------ navigation
@@ -190,7 +189,7 @@ class MouseView(Adw.BreakpointBin):
         cmd.set_margin_start(6)
         btns = Gtk.Box(spacing=8, halign=Gtk.Align.CENTER)
         install = Gtk.Button(label="Install access rule", css_classes=["suggested-action", "pill"])
-        install.connect("clicked", self._install_udev)
+        install.connect("clicked", self.shell._install_udev)
         copyb = Gtk.Button(label="Copy command", css_classes=["pill"])
         copyb.connect("clicked", lambda *_: (self.get_clipboard().set(UDEV_CMD), self.toast("Command copied")))
         btns.append(install)
@@ -200,22 +199,6 @@ class MouseView(Adw.BreakpointBin):
         box.append(self.perm_box)
         self.status_page.set_child(box)
         return self.status_page
-
-    def _install_udev(self, *_):
-        script = (f"install -m644 '{UDEV_RULE}' /etc/udev/rules.d/ && udevadm control --reload && "
-                  "udevadm trigger --subsystem-match=hidraw")
-        try:
-            proc = subprocess.Popen(["pkexec", "sh", "-c", script])
-        except FileNotFoundError:
-            self.toast("pkexec is not available — run the command in a terminal")
-            return
-
-        def check():
-            if proc.poll() is None:
-                return True
-            self.toast("Access rule installed" if proc.returncode == 0 else "Installation cancelled or failed")
-            return False
-        GLib.timeout_add(300, check)
 
     def _on_status(self, status, detail):
         if status == "connected":
@@ -336,13 +319,18 @@ class MouseView(Adw.BreakpointBin):
         if self.editing_active:
             self.live_restore_from(base)
 
-    def live_restore_from(self, prof: Profile):
+    def live_restore_from(self, prof: Profile, latest=False):
         """Put the live (volatile) HITS / bhop values back to the stored profile."""
+        if prof is None:
+            return
+        prof = copy.deepcopy(prof)
+
         def job(s):
-            for i, h in enumerate(prof.hits):
+            base = s.snapshot.profiles.get(prof.sector, prof) if latest else prof
+            for i, h in enumerate(base.hits):
                 s.apply_hits(i, h)
             if s.snapshot.bhop_ms is not None:
-                s.apply_bhop(prof.bhop_ms)
+                s.apply_bhop(base.bhop_ms)
         self.run(job)
 
     def save(self):

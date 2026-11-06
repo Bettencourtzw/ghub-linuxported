@@ -77,8 +77,9 @@ class KeyboardView(Adw.BreakpointBin):
                       ("battery", self.service.on("battery", lambda _b: self._fill_info()))]
         self._on_status(self.service.status, self.service.status_detail)
         self._fill_info()
+        self._anim = None
         self._load_state()
-        self._anim = GLib.timeout_add(33, self._animate)
+        self._update_preview()
 
     # ------------------------------------------------------------ building
     def _lighting_page(self):
@@ -253,11 +254,13 @@ class KeyboardView(Adw.BreakpointBin):
         def fail(exc):
             self.spinner.set_visible(False)
             self.shell.toast(f"Keyboard: {exc}")
+        self._update_preview()
         self.spinner.set_visible(True)
         self.service.submit(lambda s: s.apply(st), done, fail)
 
     def _changed(self):
         if not self._loading:
+            self._update_preview()
             self.push(self._send)
 
     # ------------------------------------------------------------ handlers
@@ -305,6 +308,7 @@ class KeyboardView(Adw.BreakpointBin):
         if self._loading:
             return
         v = int(self.bright.get_value())
+        self.state["brightness"] = v
         self.push_brightness(lambda: self.service.submit(lambda s: s.set_brightness(v),
                                                          on_error=lambda e: self.shell.toast(f"Brightness: {e}")))
 
@@ -350,8 +354,17 @@ class KeyboardView(Adw.BreakpointBin):
         out.update({int(u): tuple(c) for u, c in self.state["keys"].items()})
         return out
 
-    def _animate(self):
-        if not self.get_mapped():
+    def _update_preview(self):
+        animated = self.state["mode"] in {"breathe", "cycle", "wave", "ripple"}
+        if self._anim and not animated:
+            GLib.source_remove(self._anim)
+            self._anim = None
+        elif animated and not self._anim:
+            self._anim = GLib.timeout_add(33, self._animate)
+        self._animate(force=True)
+
+    def _animate(self, force=False):
+        if not force and not self.get_mapped():
             return True
         st, t = self.state, time.monotonic() - self._t0
         mode, rgb = st["mode"], tuple(st["color"])
@@ -415,11 +428,14 @@ class KeyboardView(Adw.BreakpointBin):
             self.dev_rows["zones"].set_subtitle(f"{len(info.zones)} zones")
             self.dev_rows["effects"].set_subtitle(", ".join(e.name for e in info.effects) or "—")
             if info.brightness is not None and self.state["brightness"] is None:
+                self.state["brightness"] = info.brightness
                 self._loading = True
                 self.bright.set_value(info.brightness)
                 self._loading = False
 
     def close(self):
+        self.push_brightness.flush()
+        self.push.flush()
         for event, cb in self._subs:
             self.service.off(event, cb)
         if self._anim:

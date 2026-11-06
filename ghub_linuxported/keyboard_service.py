@@ -11,7 +11,7 @@ import time
 
 from .worker import DeviceWorker
 from .hidpp.mouse import Mouse, F_UNIFIED_BATTERY
-from .hidpp.lighting import Lighting, zone_for_usage
+from .hidpp.lighting import Lighting, zone_for_usage, F_BRIGHTNESS
 from .hidpp.transport import HidppError
 from . import storage
 
@@ -43,9 +43,7 @@ def load_state(key: str) -> dict:
 
 
 def save_state(key: str, state: dict):
-    cfg = storage.load_config()
-    cfg.setdefault("keyboards", {})[key] = state
-    storage.save_config(cfg)
+    storage.update_config({"keyboards": {key: state}})
 
 
 class KeyboardService(DeviceWorker):
@@ -63,7 +61,9 @@ class KeyboardService(DeviceWorker):
 
     # ---------- worker hooks
     def open_device(self):
-        return Mouse.open(SWID_KBD, node=self.found.path, dev_index=self.found.dev_index)
+        return Mouse.open(SWID_KBD, node=self.found.path, dev_index=self.found.dev_index,
+                          expected_pid=self.found.pid,
+                          expected_unit=self.identity.unit_id if self.identity is not None else None)
 
     def refresh(self):
         d = self.dev
@@ -109,6 +109,8 @@ class KeyboardService(DeviceWorker):
         if mode != "perkey":
             L.primed = False
         rgb = tuple(st["color"])
+        if st["brightness"] is not None and self.dev.has(F_BRIGHTNESS):
+            L.set_brightness(st["brightness"])
         if mode == "off":
             L.off()
         elif mode == "static":
@@ -131,10 +133,11 @@ class KeyboardService(DeviceWorker):
 
     def apply(self, state: dict, persist=True):
         """Device thread: apply and remember a lighting state."""
-        self.state = copy.deepcopy(state)
+        state = copy.deepcopy(state)
+        self._apply_device(state)
+        self.state = state
         if persist:
             save_state(self.key, self.state)
-        self._apply_device(self.state)
 
     def set_brightness(self, value: int, persist=True):
         self.lighting.set_brightness(value)

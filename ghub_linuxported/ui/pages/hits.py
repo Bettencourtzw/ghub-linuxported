@@ -130,7 +130,7 @@ class HitsPage(Page):
 
     def _on_link(self, row, _p):
         self.win.config["link_hits_buttons"] = row.get_active()
-        storage.save_config(self.win.config)
+        storage.update_config({"link_hits_buttons": row.get_active()})
 
     def changed(self, index):
         edit = self.win.edit

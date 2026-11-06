@@ -258,13 +258,25 @@ class Debouncer:
     def __init__(self, ms=180):
         self.ms = ms
         self._id = None
+        self._pending = None
 
     def __call__(self, fn):
         if self._id:
             GLib.source_remove(self._id)
 
+        self._pending = fn
+
         def fire():
             self._id = None
+            self._pending = None
             fn()
             return False
         self._id = GLib.timeout_add(self.ms, fire)
+
+    def flush(self):
+        if self._id:
+            GLib.source_remove(self._id)
+            self._id = None
+        fn, self._pending = self._pending, None
+        if fn:
+            fn()

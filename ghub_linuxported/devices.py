@@ -58,7 +58,8 @@ def _classify(d: FoundDevice):
         d.model, d.kind = "superstrike", "mouse"
     elif d.kind == "keyboard" or d.pid in KEYBOARD_PIDS:
         d.kind = "keyboard"
-        d.model = "keyboard"
+        d.model = ("keyboard" if d.pid in KEYBOARD_PIDS and
+                   {F_RGB_EFFECTS, F_PER_KEY, F_BRIGHTNESS} <= d.features else "generic")
     else:
         d.model = "generic"
 
@@ -120,7 +121,10 @@ def scan(previous: dict[str, FoundDevice] | None = None) -> tuple[list[FoundDevi
             out.append(probe(node, prev))
         except PermissionError:
             denied = True
-        except (DeviceGone, OSError):
+        except (DeviceGone, OSError, HidppTimeout, HidppError):
+            if prev:
+                from dataclasses import replace
+                out.append(replace(prev, awake=False))
             continue
     order = {"mouse": 0, "keyboard": 1, "headset": 2}
     out.sort(key=lambda d: (order.get(d.kind, 9), d.title))

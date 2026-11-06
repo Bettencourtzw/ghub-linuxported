@@ -110,6 +110,21 @@ class ServiceSaveTests(unittest.TestCase):
             svc._write_verified(1, FIXTURE[:-1] + b"\x00", "test")
         self.assertEqual(svc.mouse.writes, [])
 
+    def test_failed_backup_read_never_writes(self):
+        from ghub_linuxported.hidpp.transport import HidppError
+        svc = self.make()
+        with mock.patch.object(svc.mouse, "read_sector", side_effect=HidppError(1, 0, 1, b"error")):
+            with self.assertRaises(service_mod.SaveError):
+                svc._write_verified(1, FIXTURE, "test")
+        self.assertEqual(svc.mouse.writes, [])
+
+    def test_incomplete_backup_read_never_writes(self):
+        svc = self.make()
+        with mock.patch.object(svc.mouse, "read_sector", return_value=b"short"):
+            with self.assertRaises(service_mod.SaveError):
+                svc._write_verified(1, FIXTURE, "test")
+        self.assertEqual(svc.mouse.writes, [])
+
     def test_cannot_disable_last_profile(self):
         svc = self.make()
         for e in svc.snapshot.directory[1:]:
