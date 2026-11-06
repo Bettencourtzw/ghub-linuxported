@@ -10,7 +10,7 @@ import copy
 import time
 
 from .worker import DeviceWorker
-from .hidpp.mouse import Mouse, F_UNIFIED_BATTERY
+from .hidpp.mouse import Mouse, F_UNIFIED_BATTERY, FeatureMissing
 from .hidpp.lighting import Lighting, zone_for_usage, F_BRIGHTNESS
 from .hidpp.transport import HidppError
 from . import storage
@@ -67,7 +67,10 @@ class KeyboardService(DeviceWorker):
 
     def refresh(self):
         d = self.dev
-        self.identity = d.identity()
+        identity = d.identity()
+        if not identity.unit_id:
+            raise FeatureMissing("Cannot verify keyboard identity; reconnect the keyboard and retry")
+        self.identity = identity
         self.battery = d.battery() if d.has(F_UNIFIED_BATTERY) else None
         self.lighting = Lighting(d)
         self.lighting.probe()
@@ -103,6 +106,8 @@ class KeyboardService(DeviceWorker):
         if mode == "onboard":
             if L.claimed:
                 L.release()
+            if st["brightness"] is not None and self.dev.has(F_BRIGHTNESS):
+                L.set_brightness(st["brightness"])
             return
         if not L.claimed:
             L.claim()

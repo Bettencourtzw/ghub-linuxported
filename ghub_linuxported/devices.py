@@ -31,6 +31,7 @@ class FoundDevice:
     usb_name: str
     dev_index: int | None = None
     name: str = ""
+    unit_id: str = ""
     kind: str = "other"          # mouse / keyboard / headset / ...
     model: str = "generic"       # superstrike / keyboard / generic
     awake: bool = False
@@ -83,18 +84,17 @@ def probe(node, previous: FoundDevice | None = None) -> FoundDevice:
         m = Mouse(t, d.connection)
         try:
             d.dev_index, d.awake = idx, True
-            if previous and previous.awake and previous.name:
-                d.name, d.kind, d.features = previous.name, previous.kind, previous.features
-            else:
-                for fid in (F_DEVICE_NAME, F_UNIFIED_BATTERY, F_RGB_EFFECTS, F_PER_KEY, F_BRIGHTNESS, 0x1B0C):
-                    if m.feature_index(fid, required=False) is not None:
-                        d.features.add(fid)
-                if F_DEVICE_NAME in d.features:
-                    d.name = m.identity().name
-                    try:
-                        d.kind = DEVICE_TYPES.get(m.call(F_DEVICE_NAME, 2)[0], "other")
-                    except (HidppError, HidppTimeout):
-                        pass
+            for fid in (F_DEVICE_NAME, F_UNIFIED_BATTERY, F_RGB_EFFECTS, F_PER_KEY, F_BRIGHTNESS, 0x1B0C):
+                if m.feature_index(fid, required=False) is not None:
+                    d.features.add(fid)
+            identity = m.identity()
+            d.unit_id = identity.unit_id
+            if F_DEVICE_NAME in d.features:
+                d.name = identity.name
+                try:
+                    d.kind = DEVICE_TYPES.get(m.call(F_DEVICE_NAME, 2)[0], "other")
+                except (HidppError, HidppTimeout):
+                    pass
             if F_UNIFIED_BATTERY in d.features:
                 try:
                     d.battery = m.battery()
@@ -105,6 +105,7 @@ def probe(node, previous: FoundDevice | None = None) -> FoundDevice:
         break
     if not d.awake and previous:
         d.name, d.kind, d.features, d.dev_index = previous.name, previous.kind, previous.features, previous.dev_index
+        d.unit_id = previous.unit_id
     _classify(d)
     return d
 

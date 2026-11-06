@@ -52,14 +52,15 @@ class KeyboardHandlerTests(unittest.TestCase):
     def test_close_flushes_pending_edits_before_stopping_service(self):
         events = []
         app = Mock()
-        app.keyboard_view_closed.side_effect = lambda _: events.append('close')
+        app.keyboard_view_closed.side_effect = lambda *args: events.append('close')
         view = SimpleNamespace(push_brightness=Mock(), push=Mock(), _subs=[], _anim=None,
-                               shell=Mock(), found=object())
+                               shell=Mock(), found=object(), state={"mode": "static"})
         view.shell.get_application.return_value = app
         view.push_brightness.flush.side_effect = lambda: events.append('brightness')
         view.push.flush.side_effect = lambda: events.append('effect')
         handler('keyboard_view.py', 'KeyboardView', 'close')(view)
         self.assertEqual(events, ['brightness', 'effect', 'close'])
+        app.keyboard_view_closed.assert_called_once_with(view.found, 'static')
 
     def test_debounced_edit_flush_runs_once_and_removes_timeout(self):
         glib, apply = Mock(), Mock()
@@ -84,3 +85,24 @@ class KeyboardHandlerTests(unittest.TestCase):
         service.snapshot.bhop_ms = 0
         view.run.call_args.args[0](service)
         self.assertEqual(service.apply_hits.call_args_list[0].args[1].actuation, 5)
+
+
+class ApplicationKeyboardTests(unittest.TestCase):
+    def test_immediate_close_keeps_queued_custom_effect_alive(self):
+        svc = Mock(state={'mode': 'onboard'})
+        found = SimpleNamespace(key='keyboard')
+        app = SimpleNamespace(keyboards={'keyboard': svc})
+        handler('app.py', 'App', 'keyboard_view_closed')(app, found, 'static')
+        svc.stop.assert_not_called()
+        self.assertIs(app.keyboards['keyboard'], svc)
+
+    def test_changed_path_reuses_worker_for_the_same_physical_keyboard(self):
+        svc = Mock()
+        svc.found = SimpleNamespace(pid=0x40b4)
+        svc.identity = SimpleNamespace(unit_id='known')
+        found = SimpleNamespace(key='new-path', pid=0x40b4, unit_id='known')
+        app = SimpleNamespace(keyboards={'old-path': svc})
+        result = handler('app.py', 'App', 'keyboard_service')(app, found)
+        self.assertIs(result, svc)
+        self.assertEqual(app.keyboards, {'new-path': svc})
+        self.assertIs(svc.found, found)

@@ -111,6 +111,18 @@ class App(Adw.Application):
     # ---------- keyboards (lighting must be kept alive by a running service)
     def keyboard_service(self, found):
         svc = self.keyboards.get(found.key)
+        if svc and svc.identity and found.unit_id and svc.identity.unit_id != found.unit_id:
+            svc.stop()
+            del self.keyboards[found.key]
+            svc = None
+        if svc is None and found.unit_id:
+            for key, existing in list(self.keyboards.items()):
+                if (existing.found.pid == found.pid and existing.identity and
+                        existing.identity.unit_id == found.unit_id):
+                    svc = self.keyboards.pop(key)
+                    svc.found = found
+                    self.keyboards[found.key] = svc
+                    break
         if svc is None:
             from ..keyboard_service import KeyboardService
             svc = KeyboardService(lambda fn, *a: GLib.idle_add(lambda: fn(*a) and False), found)
@@ -119,9 +131,9 @@ class App(Adw.Application):
             svc.start()
         return svc
 
-    def keyboard_view_closed(self, found):
+    def keyboard_view_closed(self, found, mode):
         svc = self.keyboards.get(found.key)
-        if svc and svc.state.get("mode") == "onboard":
+        if svc and mode == "onboard":
             svc.stop()  # nothing to keep alive
             del self.keyboards[found.key]
 

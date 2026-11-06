@@ -174,7 +174,7 @@ class Mouse:
         nodes exist but are not accessible, FileNotFoundError if no candidate answers."""
         nodes = list_logitech_nodes()
         if node:
-            ordered = [n for n in nodes if n.path == node and
+            ordered = [n for n in nodes if (n.path == node or expected_unit) and
                        (expected_pid is None or n.product == expected_pid)]
         else:
             ordered = ([n for n in nodes if n.product == PID_WIRED] +

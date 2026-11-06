@@ -441,4 +441,4 @@ class KeyboardView(Adw.BreakpointBin):
         if self._anim:
             GLib.source_remove(self._anim)
             self._anim = None
-        self.shell.get_application().keyboard_view_closed(self.found)
+        self.shell.get_application().keyboard_view_closed(self.found, self.state["mode"])

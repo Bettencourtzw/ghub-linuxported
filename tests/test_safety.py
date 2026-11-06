@@ -161,6 +161,16 @@ class DiscoverySafetyTests(unittest.TestCase):
                 Mouse.open(node=node.path, expected_pid=0x40b4)
             transport.assert_not_called()
 
+    def test_same_unit_reconnects_after_linux_changes_its_path(self):
+        node = SimpleNamespace(path='/dev/hidraw9', product=0x40b4, name='Keyboard')
+        with patch('ghub_linuxported.hidpp.mouse.list_logitech_nodes', return_value=[node]), \
+             patch('ghub_linuxported.hidpp.mouse.HidrawTransport'), \
+             patch.object(Mouse, '_ping', return_value='2.0'), \
+             patch.object(Mouse, 'feature_index', return_value=None), \
+             patch.object(Mouse, 'identity', return_value=Identity(unit_id='known')):
+            mouse = Mouse.open(node='/dev/hidraw1', dev_index=1, expected_pid=0x40b4, expected_unit='known')
+        self.assertEqual(mouse.node.path, '/dev/hidraw9')
+
     def test_reused_path_same_product_different_unit_is_closed(self):
         node = SimpleNamespace(path='/dev/hidraw1', product=0x40b4, name='Keyboard')
         with patch('ghub_linuxported.hidpp.mouse.list_logitech_nodes', return_value=[node]), \
@@ -189,6 +199,31 @@ class KeyboardSafetyTests(unittest.TestCase):
             svc.refresh()
         light.set_brightness.assert_called_once_with(25)
         light.static.assert_called_once()
+
+    def test_onboard_reconnect_restores_brightness_without_claiming_rgb(self):
+        svc = self.make_service()
+        svc.state['brightness'] = 25
+        svc.dev = Mock()
+        svc.dev.identity.return_value = Identity(unit_id='known')
+        light = Mock(claimed=False)
+        light.info.brightness = 100
+        with patch('ghub_linuxported.keyboard_service.Lighting', return_value=light):
+            svc.refresh()
+        light.set_brightness.assert_called_once_with(25)
+        light.claim.assert_not_called()
+
+    def test_missing_identity_is_retryable_and_never_applies_lighting(self):
+        svc = self.make_service()
+        svc.dev = Mock()
+        svc.dev.identity.return_value = Identity(unit_id='')
+        with patch('ghub_linuxported.keyboard_service.Lighting') as light:
+            with self.assertRaisesRegex(FeatureMissing, 'identity'):
+                svc.refresh()
+            light.assert_not_called()
+        self.assertIsNone(svc.identity)
+        with patch.object(Mouse, 'open') as opened:
+            svc.open_device()
+        self.assertIsNone(opened.call_args.kwargs['expected_unit'])
 
     def test_failed_effect_is_not_persisted(self):
         svc = self.make_service()
