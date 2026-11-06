@@ -31,13 +31,13 @@ class FoundDevice:
     usb_name: str
     dev_index: int | None = None
     name: str = ""
-    unit_id: str = ""
     kind: str = "other"          # mouse / keyboard / headset / ...
     model: str = "generic"       # superstrike / keyboard / generic
     awake: bool = False
     battery: Battery | None = None
     connection: str = ""
     features: set = field(default_factory=set)
+    unit_id: str = ""
 
     @property
     def key(self) -> str:

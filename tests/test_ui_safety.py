@@ -106,3 +106,18 @@ class ApplicationKeyboardTests(unittest.TestCase):
         self.assertIs(result, svc)
         self.assertEqual(app.keyboards, {'new-path': svc})
         self.assertIs(svc.found, found)
+
+
+class PreviewFixtureTests(unittest.TestCase):
+    def test_preview_devices_retain_correct_routing_and_battery_fields(self):
+        from ghub_linuxported.hidpp.mouse import Battery
+        path = ROOT.parents[1] / 'tools/ui_preview.py'
+        tree = ast.parse(path.read_text())
+        fn = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'fake_devices')
+        namespace = {'Battery': Battery}
+        exec(compile(ast.Module(body=[fn], type_ignores=[]), str(path), 'exec'), namespace)
+        mouse, keyboard = namespace['fake_devices']()
+        self.assertEqual((mouse.kind, mouse.model, mouse.battery.percent), ('mouse', 'superstrike', 72))
+        self.assertEqual((keyboard.kind, keyboard.model, keyboard.battery.percent), ('keyboard', 'keyboard', 64))
+        self.assertTrue(mouse.awake)
+        self.assertTrue(keyboard.awake)
